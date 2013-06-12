@@ -90,7 +90,18 @@ $(document).ready(function() {
 
 		}
 	});
-
-
+	
+	function getForms() {
+		$('.more-info').click(function(){
+			var action = $(this).attr('data-action')
+			
+			$.get("ajaxforms", { name: "John", time: "2pm", action: action})
+			.done(function(data) {	
+				$('#content').html(data)
+			});
+		});
+	}
+	getForms();
+	//$.get("buildqueue", { name: "John", time: "2pm" } );
 
 });

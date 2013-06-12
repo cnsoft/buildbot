@@ -1,0 +1,15 @@
+  {{simonPath.name[0]}}
+  ##
+{{simonPath.action[0]}}
+##
+  <p>To force a build, fill out the following fields and
+        push the 'Force Build' button</p>
+
+ <form method="post" name="force_build" action="{{simonPath.action[0]}}" class="command_forcebuild">
+
+  <input type='hidden' name='forcescheduler' value='{{sch.name}}' />
+  
+
+  <input class="grey-btn" type="submit" value="Force Build" />
+
+</form>
