@@ -90,7 +90,70 @@ $(document).ready(function() {
 
 		}
 	});
+/*
+	var pusher = new Pusher('9e21c24843450454233f'); // Replace with your app key
+	var channel = pusher.subscribe('my-channel');
 
+	channel.bind('my-event', function(data) {
+  		//alert('An event was triggered with message: ' + data.message);
+  		$('#esttime').html(data.message);
 
-
+	});	
+*/
 });
+var sock = null;
+         var ellog = null;
+
+         window.onload = function() {
+
+            var wsuri;
+            ellog = document.getElementById('log');
+
+            if (window.location.protocol === "file:") {
+               wsuri = "ws://localhost:9000";
+            } else {
+               wsuri = "ws://" + window.location.hostname + ":9000";
+            }
+
+            if ("WebSocket" in window) {
+               sock = new WebSocket(wsuri);
+            } else if ("MozWebSocket" in window) {
+               sock = new MozWebSocket(wsuri);
+            } else {
+               log("Browser does not support WebSocket!");
+               window.location = "http://autobahn.ws/unsupportedbrowser";
+            }
+
+            if (sock) {
+               sock.onopen = function() {
+                  log("Connected to " + wsuri);
+               }
+
+               sock.onclose = function(e) {
+                  log("Connection closed (wasClean = " + e.wasClean + ", code = " + e.code + ", reason = '" + e.reason + "')");
+                  sock = null;
+               }
+
+               sock.onmessage = function(e) {
+                  log("Got echo: " + e.data);
+               }
+            }
+         };
+
+         function broadcast() {
+            var msg = document.getElementById('message').value;
+            if (sock) {
+               sock.send(msg);
+               log("Sent: " + msg);
+            } else {
+               log("Not connected.");
+            }
+         };
+ 
+         function log(m) {
+         	//$(ellog).html(this.innerHTML += m + '\n');
+            //$(ellog).scrollTop(this.scrollHeight);
+            $('#content').html(m);
+            $(ellog).html(m);
+         };
+            
