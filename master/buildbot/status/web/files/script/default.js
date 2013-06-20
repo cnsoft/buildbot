@@ -90,7 +90,7 @@ $(document).ready(function() {
 
 		}
 	});
-	
+	// Tablesorter
 		$('.tablesorter').dataTable({
 			"bPaginate": false,
 			"bLengthChange": false,
@@ -108,4 +108,22 @@ $(document).ready(function() {
 			 	"sSearch": "Filter"
 			 }
 		});
+	// xml logs
+	/*
+	$.ajax({
+        type: "GET",
+		url: "test.xml",
+		dataType: "json",
+		success: function(xml) {
+			
+	 		$(xml).find('test-case').each(function(){
+	 			var name = $(this).attr('name');
+	 			var result = $(this).attr('result');
+				var time = $(this).find('time').text();
+				var success = $(this).find('success').text();
+				$('<div class="items" id="link_'+result+'"></div>').html('<a href="'+time+'">'+name+'</a>').appendTo('.interface');
+			});
+		}
+	});
+	*/
 });
