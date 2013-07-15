@@ -85,11 +85,11 @@ Other optional keys may be set on each ``BuilderConfig``:
     Deferred which should fire with the same results.
 
 ``canStartBuild``
-    If provided, this is a function that can veto whether a particular buildslave 
-    should be used for a given build request. The function is passed three 
+    If provided, this is a function that can veto whether a particular buildslave
+    should be used for a given build request. The function is passed three
     arguments: the :class:`Builder`, a :class:`BuildSlave`, and a :class:`BuildRequest`.
-    The function should return ``True`` if the combination is acceptable, or 
-    ``False`` otherwise. This function can optionally return a Deferred which 
+    The function should return ``True`` if the combination is acceptable, or
+    ``False`` otherwise. This function can optionally return a Deferred which
     should fire with the same results.
 
 ``locks``
@@ -186,7 +186,7 @@ called on to start their builds.  The details of writing such a function are in
 Such a function can be provided to the BuilderConfig as follows::
 
     def pickNextBuild(builder, requests):
-        # ...
+        ...
     c['builders'] = [
         BuilderConfig(name='test', factory=f,
             nextBuild=pickNextBuild,

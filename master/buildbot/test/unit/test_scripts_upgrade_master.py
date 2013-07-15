@@ -22,7 +22,7 @@ from twisted.internet import defer
 from buildbot.scripts import upgrade_master
 from buildbot import config as config_module
 from buildbot.db import connector, model
-from buildbot.test.util import dirs, misc, compat
+from buildbot.test.util import dirs, misc, compat, www
 
 def mkconfig(**kwargs):
     config = dict(quiet=False, replace=False, basedir='test')
@@ -48,7 +48,7 @@ class TestUpgradeMaster(dirs.DirsMixin, misc.StdoutAssertionsMixin,
             return basedirOk
         self.patch(upgrade_master, 'checkBasedir', checkBasedir)
 
-        def loadConfig(config):
+        def loadConfig(config, configFileName='master.cfg'):
             self.calls.append('loadConfig')
             return config_module.MasterConfig() if configOk else False
         self.patch(upgrade_master, 'loadConfig', loadConfig)
@@ -98,8 +98,8 @@ class TestUpgradeMaster(dirs.DirsMixin, misc.StdoutAssertionsMixin,
             self.assertEqual(rv, 1)
         return d
 
-class TestUpgradeMasterFunctions(dirs.DirsMixin, misc.StdoutAssertionsMixin,
-                                unittest.TestCase):
+class TestUpgradeMasterFunctions(www.WwwTestMixin, dirs.DirsMixin,
+                                 misc.StdoutAssertionsMixin, unittest.TestCase):
 
     def setUp(self):
         self.setUpDirs('test')
@@ -138,7 +138,7 @@ class TestUpgradeMasterFunctions(dirs.DirsMixin, misc.StdoutAssertionsMixin,
     def test_checkBasedir_no_dir(self):
         rv = upgrade_master.checkBasedir(mkconfig(basedir='doesntexist'))
         self.assertFalse(rv)
-        self.assertInStdout('is not a Buildbot basedir')
+        self.assertInStdout('invalid buildmaster directory')
 
     @compat.skipUnlessPlatformIs('posix')
     def test_checkBasedir_active_pidfile(self):

@@ -16,13 +16,15 @@
 import mock
 from twisted.trial import unittest
 from twisted.internet import defer
+from twisted.python import failure
 from buildbot.data import schedulers
-from buildbot.test.util import validation, endpoint, interfaces
+from buildbot.test.util import endpoint, interfaces
 from buildbot.test.fake import fakemaster, fakedb
 
-class Scheduler(endpoint.EndpointMixin, unittest.TestCase):
+class SchedulerEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
     endpointClass = schedulers.SchedulerEndpoint
+    resourceTypeClass = schedulers.Scheduler
 
     def setUp(self):
         self.setUpEndpoint()
@@ -33,7 +35,7 @@ class Scheduler(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.SchedulerMaster(schedulerid=13, masterid=None),
             fakedb.Scheduler(id=14, name='other:scheduler'),
             fakedb.SchedulerMaster(schedulerid=14, masterid=22),
-            fakedb.Scheduler(id=15, name='other:scheduler'),
+            fakedb.Scheduler(id=15, name='another:scheduler'),
             fakedb.SchedulerMaster(schedulerid=15, masterid=33),
         ])
 
@@ -42,54 +44,55 @@ class Scheduler(endpoint.EndpointMixin, unittest.TestCase):
         self.tearDownEndpoint()
 
     def test_get_existing(self):
-        d = self.callGet(dict(), dict(schedulerid=14))
+        d = self.callGet(('scheduler', 14))
         @d.addCallback
         def check(scheduler):
-            validation.verifyData(self, 'scheduler', {}, scheduler)
+            self.validateData(scheduler)
             self.assertEqual(scheduler['name'], 'other:scheduler')
         return d
 
     def test_get_no_master(self):
-        d = self.callGet(dict(), dict(schedulerid=13))
+        d = self.callGet(('scheduler', 13))
         @d.addCallback
         def check(scheduler):
-            validation.verifyData(self, 'scheduler', {}, scheduler)
+            self.validateData(scheduler)
             self.assertEqual(scheduler['master'], None),
         return d
 
     def test_get_masterid_existing(self):
-        d = self.callGet(dict(), dict(schedulerid=14, masterid=22))
+        d = self.callGet(('master', 22, 'scheduler', 14))
         @d.addCallback
         def check(scheduler):
-            validation.verifyData(self, 'scheduler', {}, scheduler)
+            self.validateData(scheduler)
             self.assertEqual(scheduler['name'], 'other:scheduler')
         return d
 
     def test_get_masterid_no_match(self):
-        d = self.callGet(dict(), dict(schedulerid=13, masterid=33))
+        d = self.callGet(('master', 33, 'scheduler', 13))
         @d.addCallback
         def check(scheduler):
             self.assertEqual(scheduler, None)
         return d
 
     def test_get_masterid_missing(self):
-        d = self.callGet(dict(), dict(schedulerid=13, masterid=25))
+        d = self.callGet(('master', 99, 'scheduler', 13))
         @d.addCallback
         def check(scheduler):
             self.assertEqual(scheduler, None)
         return d
 
     def test_get_missing(self):
-        d = self.callGet(dict(), dict(schedulerid=99))
+        d = self.callGet(('scheduler', 99))
         @d.addCallback
         def check(scheduler):
             self.assertEqual(scheduler, None)
         return d
 
 
-class Schedulers(endpoint.EndpointMixin, unittest.TestCase):
+class SchedulersEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
     endpointClass = schedulers.SchedulersEndpoint
+    resourceTypeClass = schedulers.Scheduler
 
     def setUp(self):
         self.setUpEndpoint()
@@ -100,9 +103,9 @@ class Schedulers(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.SchedulerMaster(schedulerid=13, masterid=None),
             fakedb.Scheduler(id=14, name='other:scheduler'),
             fakedb.SchedulerMaster(schedulerid=14, masterid=22),
-            fakedb.Scheduler(id=15, name='other:scheduler'),
+            fakedb.Scheduler(id=15, name='another:scheduler'),
             fakedb.SchedulerMaster(schedulerid=15, masterid=33),
-            fakedb.Scheduler(id=16, name='other:scheduler'),
+            fakedb.Scheduler(id=16, name='wholenother:scheduler'),
             fakedb.SchedulerMaster(schedulerid=16, masterid=33),
         ])
 
@@ -110,27 +113,25 @@ class Schedulers(endpoint.EndpointMixin, unittest.TestCase):
         self.tearDownEndpoint()
 
     def test_get(self):
-        d = self.callGet(dict(), dict())
+        d = self.callGet(('scheduler',))
         @d.addCallback
         def check(schedulers):
-            [ validation.verifyData(self, 'scheduler', {}, m)
-                for m in schedulers ]
+            [ self.validateData(m) for m in schedulers ]
             self.assertEqual(sorted([m['schedulerid'] for m in schedulers]),
                              [13, 14, 15, 16])
         return d
 
     def test_get_masterid(self):
-        d = self.callGet(dict(), dict(masterid=33))
+        d = self.callGet(('master', 33, 'scheduler'))
         @d.addCallback
         def check(schedulers):
-            [ validation.verifyData(self, 'scheduler', {}, m)
-                for m in schedulers ]
+            [ self.validateData(m) for m in schedulers ]
             self.assertEqual(sorted([m['schedulerid'] for m in schedulers]),
                              [15, 16])
         return d
 
     def test_get_masterid_missing(self):
-        d = self.callGet(dict(), dict(masterid=23))
+        d = self.callGet(('master', 23, 'scheduler'))
         @d.addCallback
         def check(schedulers):
             self.assertEqual(schedulers, [])
@@ -141,12 +142,12 @@ class Schedulers(endpoint.EndpointMixin, unittest.TestCase):
                 expected_filter=('scheduler', None, None))
 
 
-class SchedulerResourceType(interfaces.InterfaceTests, unittest.TestCase):
+class Scheduler(interfaces.InterfaceTests, unittest.TestCase):
 
     def setUp(self):
         self.master = fakemaster.make_master(wantMq=True, wantDb=True,
                                             wantData=True, testcase=self)
-        self.rtype = schedulers.SchedulerResourceType(self.master)
+        self.rtype = schedulers.Scheduler(self.master)
 
     def test_signature_findSchedulerId(self):
         @self.assertArgSpecMatches(
@@ -162,19 +163,47 @@ class SchedulerResourceType(interfaces.InterfaceTests, unittest.TestCase):
         self.assertEqual((yield self.rtype.findSchedulerId(u'sch')), 10)
         self.master.db.schedulers.findSchedulerId.assert_called_with(u'sch')
 
-    def test_signature_setSchedulerMaster(self):
+    def test_signature_trySetSchedulerMaster(self):
         @self.assertArgSpecMatches(
-            self.master.data.updates.setSchedulerMaster, # fake
-            self.rtype.setSchedulerMaster) # real
-        def setSchedulerMaster(self, schedulerid, masterid):
+            self.master.data.updates.trySetSchedulerMaster, # fake
+            self.rtype.trySetSchedulerMaster) # real
+        def trySetSchedulerMaster(self, schedulerid, masterid):
             pass
 
     @defer.inlineCallbacks
-    def test_setSchedulerMaster_succeeds(self):
+    def test_trySetSchedulerMaster_succeeds(self):
         self.master.db.schedulers.setSchedulerMaster = mock.Mock(
                                         return_value=defer.succeed(None))
-        yield self.rtype.setSchedulerMaster(10, 20)
+
+        result = yield self.rtype.trySetSchedulerMaster(10, 20)
+
+        self.assertTrue(result)
         self.master.db.schedulers.setSchedulerMaster.assert_called_with(10, 20)
+
+    @defer.inlineCallbacks
+    def test_trySetSchedulerMaster_fails(self):
+        d = defer.fail(failure.Failure(
+                schedulers.SchedulerAlreadyClaimedError('oh noes')))
+
+        self.master.db.schedulers.setSchedulerMaster = mock.Mock(
+                                        return_value=d)
+        result = yield self.rtype.trySetSchedulerMaster(10, 20)
+
+        self.assertFalse(result)
+
+    @defer.inlineCallbacks
+    def test_trySetSchedulerMaster_raisesOddException(self):
+        d = defer.fail(failure.Failure(RuntimeError('oh noes')))
+
+        self.master.db.schedulers.setSchedulerMaster = mock.Mock(
+                                        return_value=d)
+
+        try:
+            yield self.rtype.trySetSchedulerMaster(10, 20)
+        except RuntimeError:
+            pass
+        else:
+            self.fail("The RuntimeError did not propogate")
 
     @defer.inlineCallbacks
     def test__masterDeactivated(self):

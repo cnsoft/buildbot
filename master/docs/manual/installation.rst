@@ -102,11 +102,9 @@ SQLAlchemy: http://www.sqlalchemy.org/
 
 SQLAlchemy-Migrate: http://code.google.com/p/sqlalchemy-migrate/
 
-  Buildbot requires one of the following SQLAlchemy-Migrate versions:
-  0.6.1, 0.7.0, and 0.7.1.  Sadly, Migrate's inter-version compatibility is not
-  good, so other versions - newer or older - are unlikely to work correctly.
-  Buildbot uses SQLAlchemy-Migrate to manage schema upgrades from version to
-  version.
+  Buildbot requires one of the following SQLAlchemy-Migrate versions: 0.7.1 or 0.7.2.
+  Sadly, Migrate's inter-version compatibility is not good, so other versions - newer or older - are unlikely to work correctly.
+  Buildbot uses SQLAlchemy-Migrate to manage schema upgrades from version to version.
 
 Python-Dateutil: http://labix.org/python-dateutil
 
@@ -129,7 +127,7 @@ together.
 Installation From PyPI
 ~~~~~~~~~~~~~~~~~~~~~~
 
-The easiest way to install Buildbot is using 'pip'. For the master:
+The preferred way to install Buildbot is using ``pip``. For the master:
 
 .. code-block:: bash
 
@@ -140,6 +138,11 @@ and for the slave:
 .. code-block:: bash
 
     pip install buildbot-slave
+
+When using ``pip`` to install instead of distribution specific package manangers, 
+e.g. via `apt-get` or `ports`, it is simpler to choose exactly which version one wants
+to use. It may however be easier to install via distribution specific package mangers
+but note that they may provide an earlier version than what is available via ``pip``.
 
 Installation From Tarballs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -677,11 +680,11 @@ Other Buildslave Configuration
     This represents the encoding that buildbot should use when converting unicode
     commandline arguments into byte strings in order to pass to the operating
     system when spawning new processes.
-    
+
     The default value is what Python's :func:`sys.getfilesystemencoding()` returns, which
     on Windows is 'mbcs', on Mac OSX is 'utf-8', and on Unix depends on your locale
     settings.
-    
+
     If you need a different encoding, this can be changed in your build slave's
     :file:`buildbot.tac` file by adding a ``unicode_encoding``
     argument  to the BuildSlave constructor.

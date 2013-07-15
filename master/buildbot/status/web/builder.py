@@ -176,7 +176,7 @@ def buildForceContextForField(req, default_props, sch, field, master, buildernam
     pname = "%s.%s"%(sch.name, field.fullName)
     
     default = field.default
-    
+
     if "list" in field.type:
         choices = field.getChoices(master, sch, buildername)
         if choices:
@@ -189,7 +189,7 @@ def buildForceContextForField(req, default_props, sch, field, master, buildernam
     elif isinstance(default, unicode):
         # filter out unicode chars, and html stuff
         default = html.escape(default.encode('utf-8','ignore'))
-    
+
     default_props[pname] = default
         
     if "nested" in field.type:
@@ -250,13 +250,29 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
     def content(self, req, cxt):
         b = self.builder_status
 
+        # Grab all the parameters which are prefixed with 'property.'.
+        # We'll use these to filter the builds and build requests we
+        # show below.
+        props = {}
+        prop_prefix = 'property.'
+        for arg, val in req.args.iteritems():
+            if arg.startswith(prop_prefix):
+                props[arg[len(prop_prefix):]] = val[0]
+        def prop_match(oprops):
+            for key, val in props.iteritems():
+                if key not in oprops or val != str(oprops[key]):
+                    return False
+            return True
+
         cxt['name'] = b.getName()
         cxt['description'] = b.getDescription()
         req.setHeader('Cache-Control', 'no-cache')
         slaves = b.getSlaves()
-        connected_slaves = [s for s in slaves if s.isConnected()]
+        connected_buildslaves = [s for s in slaves if s.isConnected()]
 
-        cxt['current'] = [self.builder(x, req) for x in b.getCurrentBuilds()]
+        cxt['current'] = [
+            self.builder(x, req) for x in b.getCurrentBuilds()
+                if prop_match(x.getProperties())]
 
         cxt['pending'] = []
         statuses = yield b.getPendingBuildRequestStatuses()
@@ -269,6 +285,8 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
 
             properties = yield \
                     pb.master.db.buildsets.getBuildsetProperties(bsid)
+            if not prop_match(properties):
+                continue
 
             if source and source.changes:
                 for c in source.changes:
@@ -287,13 +305,18 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
                 'properties' : properties,
                 })
 
-        numbuilds = cxt['numbuilds'] = int(req.args.get('numbuilds', [self.numbuilds])[0])
+        numbuilds = cxt['numbuilds'] = int(req.args.get('numbuilds',
+                                                    [self.numbuilds])[0])
+        maxsearch = int(req.args.get('maxsearch', [200])[0])
         recent = cxt['recent'] = []
-        for build in b.generateFinishedBuilds(num_builds=int(numbuilds)):
+        for build in b.generateFinishedBuilds(
+                num_builds=int(numbuilds),
+                max_search=maxsearch,
+                filter_fn=lambda b: prop_match(b.getProperties())):
             recent.append(self.get_line_values(req, build, False))
 
         sl = cxt['slaves'] = []
-        connected_slaves = 0
+        connected_buildslaves = 0
         for slave in slaves:
             s = {}
             sl.append(s)
@@ -301,10 +324,10 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
             s['name'] = slave.getName()
             c = s['connected'] = slave.isConnected()
             s['paused'] = slave.isPaused()
-            s['admin'] = unicode(slave.getAdmin() or '', 'utf-8')
+            s['admin'] = slave.getAdmin() or u''
             if c:
-                connected_slaves += 1
-        cxt['connected_slaves'] = connected_slaves
+                connected_buildslaves += 1
+        cxt['connected_buildslaves'] = connected_buildslaves
 
         cxt['authz'] = self.getAuthz(req)
         cxt['builder_url'] = path_to_builder(req, b)

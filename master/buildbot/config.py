@@ -103,6 +103,7 @@ class MasterConfig(object):
         self.www = dict(
             port=None,
             url='http://localhost:8080/',
+            plugins=dict()
         )
 
     _known_config_keys = set([
@@ -285,7 +286,7 @@ class MasterConfig(object):
             error("codebaseGenerator must be a callable accepting a dict and returning a str")
         else:
             self.codebaseGenerator = codebaseGenerator
-            
+
         prioritizeBuilders = config_dict.get('prioritizeBuilders')
         if prioritizeBuilders is not None and not callable(prioritizeBuilders):
             error("prioritizeBuilders must be a callable")
@@ -387,9 +388,13 @@ class MasterConfig(object):
                 error("c['caches'] must be a dictionary")
             else:
                 valPairs = caches.items()
-                for (x, y) in valPairs:
-                  if (not isinstance(y, int)):
-                     error("value for cache size '%s' must be an integer" % x)
+                for (name, value) in valPairs:
+                    if not isinstance(value, int):
+                        error("value for cache size '%s' must be an integer"
+                              % name)
+                    if value < 1:
+                        error("'%s' cache size must be at least 1, got '%s'"
+                              % (name, value))
                 self.caches.update(caches)
 
         if 'buildCacheSize' in config_dict:
@@ -531,6 +536,14 @@ class MasterConfig(object):
         if 'www' not in config_dict:
             return
         www_cfg = config_dict['www']
+        allowed = set(['port', 'url', 'debug', 'json_cache_seconds',
+                       'rest_minimum_version', 'allowed_origins', 'jsonp',
+                       'plugins'])
+        unknown = set(www_cfg.iterkeys()) - allowed
+        if unknown:
+            error("unknown www configuration parameter(s) %s" %
+                                            (', '.join(unknown),))
+
         self.www.update(www_cfg)
 
         # invent an appropriate URL given the port
@@ -539,6 +552,12 @@ class MasterConfig(object):
 
         if not self.www['url'].endswith('/'):
             self.www['url'] += '/'
+
+        # convert allowed_origins to a lowercased set for faster membership
+        # checks
+        if 'allowed_origins' in www_cfg:
+            self.www['allowed_origins'] = set(o.lower()
+                                for o in self.www['allowed_origins'])
 
 
     def check_single_master(self):
@@ -565,6 +584,10 @@ class MasterConfig(object):
 
 
     def check_schedulers(self):
+        # don't perform this check in multiMaster mode
+        if self.multiMaster:
+            return
+
         all_buildernames = set([ b.name for b in self.builders ])
 
         for s in self.schedulers.itervalues():

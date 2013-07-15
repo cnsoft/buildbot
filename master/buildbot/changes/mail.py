@@ -97,7 +97,7 @@ class CVSMaildirSource(MaildirSource):
             author = addr[:at]
         author = util.ascii2unicode(author)
 
-        # CVS accecpts RFC822 dates. buildbot-cvs-mail adds the date as
+        # CVS accepts RFC822 dates. buildbot-cvs-mail adds the date as
         # part of the mail header, so use that.
         # This assumes cvs is being access via ssh or pserver, so the time
         # will be the CVS server's time.
@@ -400,7 +400,7 @@ class SVNCommitEmailMaildirSource(MaildirSource):
 class BzrLaunchpadEmailMaildirSource(MaildirSource):
     name = "Launchpad"
 
-    compare_attrs = MaildirSource.compare_attrs + ["branchMap", "defaultBranch"]
+    compare_attrs = ["branchMap", "defaultBranch"]
 
     def __init__(self, maildir, prefix=None, branchMap=None, defaultBranch=None, **kwargs):
         self.branchMap = branchMap

@@ -63,7 +63,7 @@ First, an admonition: do not create extra class methods that represent the conti
         d = ...
         d.addCallback(self._myMethod_2) # BAD!
     def _myMethod_2(self, res):         # BAD!
-        # ...
+        ...
 
 Invariably, this extra method gets separated from its parent as the code
 evolves, and the result is completely unreadable. Instead, include all of the
@@ -132,7 +132,7 @@ the style within Buildbot is as follows::
 The key points to notice here:
 
 * Always import ``defer`` as a module, not the names within it.
-* Use the decorator form of ``inlineCallbacks``
+* Use the decorator form of ``inlineCallbacks``.
 * In most cases, the result of a ``yield`` expression should be assigned to a
   variable.  It can be used in a larger expression, but remember that Python
   requires that you enclose the expression in its own set of parentheses.
@@ -181,7 +181,7 @@ use a `DeferredList <http://twistedmatrix.com/documents/current/api/twisted.inte
             return res.strip()
         rev_parse_d.addCallback(parse_rev_parse)
 
-        log_d = utils.getProcessOutput(git, [ 'log', '-1', '--format=%s%n%b', results['rev'] ]))
+        log_d = utils.getProcessOutput(git, [ 'log', '-1', '--format=%s%n%b', results['rev'] ])
         def parse_log(res):
             return res.strip()
         log_d.addCallback(parse_log)
@@ -193,5 +193,5 @@ use a `DeferredList <http://twistedmatrix.com/documents/current/api/twisted.inte
         return d
 
 Here the deferred list will wait for both ``rev_parse_d`` and ``log_d`` to
-fire, or for one of them to fail. You may attach  Callbacks and errbacks to a
+fire, or for one of them to fail. You may attach callbacks and errbacks to a
 ``DeferredList`` just as for a deferred.

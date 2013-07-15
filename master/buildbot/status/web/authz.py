@@ -23,7 +23,8 @@ class Authz(object):
 
     knownActions = [
     # If you add a new action here, be sure to also update the documentation
-    # at docs/cfg-statustargets.texinfo
+    # at docs/manual/cfg-statustargets.rst.
+            'view',
             'gracefulShutdown',
             'forceBuild',
             'forceAllBuilds',
@@ -42,6 +43,7 @@ class Authz(object):
             auth=None,
             useHttpHeader=False,
             httpLoginUrl=False,
+            view=True,
             **kwargs):
         self.auth = auth
         if auth:
@@ -51,6 +53,7 @@ class Authz(object):
         self.httpLoginUrl = httpLoginUrl
 
         self.config = dict( (a, default_action) for a in self.knownActions )
+        self.config['view'] = view
         for act in self.knownActions:
             if act in kwargs:
                 self.config[act] = kwargs[act]
@@ -88,7 +91,7 @@ class Authz(object):
         return request.args.get("username", ["<unknown>"])[0]
 
     def getUsernameHTML(self, request):
-        """Get the user formatated in html (with possible link to email)"""
+        """Get the user formatted in html (with possible link to email)"""
         if self.useHttpHeader:
             return request.getUser()
         s = self.session(request)

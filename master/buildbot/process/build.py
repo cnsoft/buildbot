@@ -197,11 +197,11 @@ class Build(properties.PropertiesMixin):
         buildslave_properties = slavebuilder.slave.properties
         self.getProperties().updateFromProperties(buildslave_properties)
         if slavebuilder.slave.slave_basedir:
-            self.setProperty("builddir",
-                    self.path_module.join(
-                        slavebuilder.slave.slave_basedir,
-                        self.builder.config.slavebuilddir),
-                    "Slave")
+            builddir = self.path_module.join(
+                            slavebuilder.slave.slave_basedir,
+                            self.builder.config.slavebuilddir),
+            self.setProperty("builddir", builddir, "slave")
+            self.setProperty("workdir", builddir, "slave (deprecated)")
 
         self.slavename = slavebuilder.slave.slavename
         self.build_status.setSlavename(self.slavename)
@@ -224,7 +224,7 @@ class Build(properties.PropertiesMixin):
         slavebuilder.slave.updateSlaveStatus(buildStarted=build_status)
 
         # then narrow SlaveLocks down to the right slave
-        self.locks = [(l.getLock(self.slavebuilder.slave), a) 
+        self.locks = [(l.getLock(self.slavebuilder.slave), a)
                         for l, a in self.locks ]
         self.remote = slavebuilder.remote
         self.remote.notifyOnDisconnect(self.lostRemote)

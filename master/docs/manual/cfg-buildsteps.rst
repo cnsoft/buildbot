@@ -14,7 +14,7 @@ the :meth:`addStep` method::
 
     from buildbot.steps import source, shell
     from buildbot.process import factory
-    
+
     f = factory.BuildFactory()
     f.addStep(source.SVN(svnurl="http://svn.example.org/Trunk/"))
     f.addStep(shell.ShellCommand(command=["make", "all"]))
@@ -106,8 +106,8 @@ Arguments common to all :class:`BuildStep` subclasses:
 
 ``hideStepIf``
     A step can be optionally hidden from the waterfall and build details web pages.
-    To do this, set the step's ``hideStepIf`` to a boolean value, or to a function that takes two parameters -- the results and the :class:`BuildStep` -- and returns a boolean value. 
-    Steps are always shown while they execute, however after the step as finished, this parameter is evaluated (if a function) and if the value is True, the step is hidden. 
+    To do this, set the step's ``hideStepIf`` to a boolean value, or to a function that takes two parameters -- the results and the :class:`BuildStep` -- and returns a boolean value.
+    Steps are always shown while they execute, however after the step as finished, this parameter is evaluated (if a function) and if the value is True, the step is hidden.
     For example, in order to hide the step if the step has been skipped, ::
 
         factory.addStep(Foo(..., hideStepIf=lambda results, s: results==SKIPPED))
@@ -231,8 +231,8 @@ parameters are mostly to specify where exactly the sources are coming from.
     source stamp. The default codebase value is ''. The codebase must correspond
     to a codebase assigned by the :bb:cfg:`codebaseGenerator`. If there is no
     codebaseGenerator defined in the master then codebase doesn't need to be set,
-    the default value will then match all changes. 
-    
+    the default value will then match all changes.
+
 ``timeout``
     Specifies the timeout for slave-side operations, in seconds.  If
     your repositories are particularly large, then you may need to
@@ -309,7 +309,7 @@ The Mercurial step takes the following arguments:
       All the files which are tracked by Mercurial and listed ignore
       files are not deleted. Remaining all other files will be deleted
       before pull/update. This is equivalent to :command:`hg purge`
-      then pull/update. 
+      then pull/update.
 
 .. bb:step:: Git
 
@@ -347,6 +347,11 @@ The Git step takes the following arguments:
 ``shallow``
    (optional): instructs git to attempt shallow clones (``--depth 1``).
    This option can be used only in full builds with clobber method.
+
+``reference``
+   (optional): use the specified string as a path to a reference
+   repository on the local machine. Git will try to grab objects from
+   this path first instead of the main repository, if they exist.
 
 ``progress``
    (optional): passes the (``--progress``) flag to (:command:`git
@@ -386,7 +391,7 @@ The Git step takes the following arguments:
 
    ``clobber``
       It removes the build directory entirely then makes full clone
-      from repo. This can be slow as it need to clone whole repository. To make 
+      from repo. This can be slow as it need to clone whole repository. To make
       faster clones enable ``shallow`` option. If shallow options is enabled and
       build request have unknown revision value, then this step fails.
 
@@ -424,9 +429,9 @@ The Git step takes the following arguments:
    * ``getDescription=True`` or empty ``dict()``: Run `git describe` with no args
    * ``getDescription={...}``: a dict with keys named the same as the Git option.
      Each key's value can be ``False`` or ``None`` to explicitly skip that argument.
-     
+
      For the following keys, a value of ``True`` appends the same-named Git argument:
-     
+
       * ``all`` : `--all`
       * ``always``: `--always`
       * ``contains``: `--contains`
@@ -435,14 +440,18 @@ The Git step takes the following arguments:
       * ``exact-match``: `--exact-match`
       * ``tags``: `--tags`
       * ``dirty``: `--dirty`
-     
+
      For the following keys, an integer or string value (depending on what Git expects)
      will set the argument's parameter appropriately. Examples show the key-value pair:
-     
+
       * ``match=foo``: `--match foo`
       * ``abbrev=7``: `--abbrev=7`
       * ``candidates=7``: `--candidates=7`
       * ``dirty=foo``: `--dirty=foo`
+
+``config``
+
+   (optional) A dict of git configuration settings to pass to the remote git commands.
     
 .. bb:step:: SVN
 
@@ -491,7 +500,7 @@ Alternatively, the ``repourl`` argument can be used to create the :bb:step:`SVN`
 
 ``username``
    (optional): if specified, this will be passed to the ``svn``
-   binary with a ``--username`` option. 
+   binary with a ``--username`` option.
 
 ``password``
    (optional): if specified, this will be passed to the ``svn`` binary
@@ -503,11 +512,11 @@ Alternatively, the ``repourl`` argument can be used to create the :bb:step:`SVN`
 
 ``keep_on_purge``
    (optional): specific files or directories to keep between purges,
-   like some build outputs that can be reused between builds. 
+   like some build outputs that can be reused between builds.
 
 ``depth``
    (optional): Specify depth argument to achieve sparse checkout.
-   Only available if slave has Subversion 1.5 or higher. 
+   Only available if slave has Subversion 1.5 or higher.
 
    If set to ``empty`` updates will not pull in any files or
    subdirectories not already present. If set to ``files``, updates will
@@ -517,7 +526,7 @@ Alternatively, the ``repourl`` argument can be used to create the :bb:step:`SVN`
    If set to ``infinity``, updates will pull in any files or
    subdirectories not already present; the new subdirectories will
    have depth-infinity. Infinity is equivalent to SVN default update
-   behavior, without specifying any depth argument. 
+   behavior, without specifying any depth argument.
 
 ``preferLastChangedRev``
    (optional): By default, the ``got_revision`` property is set to the
@@ -537,7 +546,7 @@ Alternatively, the ``repourl`` argument can be used to create the :bb:step:`SVN`
       This always always purges local changes before updating. This
       deletes unversioned files and reverts everything that would
       appear in a :command:`svn status --no-ignore`. This is equivalent
-      to the old update mode with ``always_purge``. 
+      to the old update mode with ``always_purge``.
 
    ``clean``
       This is same as fresh except that it deletes all unversioned
@@ -686,6 +695,91 @@ The step takes the following arguments:
         updated then copied to ``build`` for next steps.
 
 
+.. bb:step:: P4
+
+P4
+++
+
+.. py:class:: buildbot.steps.source.p4.P4
+
+The :bb:step:`P4` build step creates a `Perforce <http://www.perforce.com/>`_
+client specification and performs an update. ::
+
+   from buildbot.steps.source.p4 import P4
+   factory.addStep(P4(p4port=p4port,
+                      p4client=WithProperties('%(P4USER)s-%(slavename)s-%(buildername)s'),
+                      p4user=p4user,
+                      p4base='//depot',
+                      p4viewspec=p4viewspec,
+                      mode='incremental',
+                      ))
+
+You can specify the client spec in two different ways. You can use the ``p4base``,
+``p4branch``, and (optionally) ``p4extra_views`` to build up the viewspec, or you can utilize
+the ``p4viewspec`` to specify the whole viewspec as a set of tuples.
+
+Using p4viewspec will allow you to add lines such as:
+
+.. code-block:: none
+
+    //depot/branch/mybranch/...             //<p4client>/...
+    -//depot/branch/mybranch/notthisdir/... //<p4client>/notthisdir/...
+
+
+If you specify ``p4viewspec`` and any of ``p4base``, ``p4branch``, and/or ``p4extra_views``
+you will receive a configuration error exception.
+
+
+``p4base``
+    A view into the Perforce depot without branch name or trailing "/...".
+    Typically ``//depot/proj``.
+
+``p4branch``
+    (optional): A single string, which is appended to the p4base as follows
+     ``<p4base>/<p4branch>/...`` to form the first line in the viewspec
+
+``p4extra_views``
+    (optional): a list of ``(depotpath, clientpath)`` tuples containing extra
+    views to be mapped into the client specification. Both will have
+    ``/...`` appended automatically. The client name and source directory
+    will be prepended to the client path.
+
+``p4viewspec``
+    This will override any p4branch, p4base, and/or p4extra_views specified.
+    The viewspec will be an array of tuples as follows
+    ``[('//depot/main/','')]``
+
+    yields a viewspec with just
+
+    ``//depot/main/... //<p4client>/...``
+
+``p4port``
+    (optional): the :samp:`{host}:{port}` string describing how to get to the P4 Depot
+    (repository), used as the :option:`-p` argument for all p4 commands.
+
+``p4user``
+    (optional): the Perforce user, used as the :option:`-u` argument to all p4
+    commands.
+
+``p4passwd``
+    (optional): the Perforce password, used as the :option:`-p` argument to all p4
+    commands.
+
+
+``p4client``
+    (optional): The name of the client to use. In ``mode='full'`` and
+    ``mode='incremental'``, it's particularly important that a unique name is used
+    for each checkout directory to avoid incorrect synchronization. For
+    this reason, Python percent substitution will be performed on this value
+    to replace %(slave)s with the slave name and %(builder)s with the
+    builder name. The default is `buildbot_%(slave)s_%(build)s`.
+
+``p4line_end``
+    (optional): The type of line ending handling P4 should use.  This is
+    added directly to the client spec's ``LineEnd`` property.  The default is
+    ``local``.
+
+
 .. bb:step:: Repo
 
 Repo
@@ -743,7 +837,7 @@ This Source step integrates with :bb:chsrc:`GerritChangeSource`, and will
 automatically use the :command:`repo download` command of repo to
 download the additionnal changes introduced by a pending changeset.
 
-.. index:: Properties; Gerrit integration
+.. index:: double: Gerrit integration; Repo Build Step
 
 Gerrit integration can be also triggered using forced build with following properties:
 ``repo_d``, ``repo_d[0-9]``, ``repo_download``, ``repo_download[0-9]``
@@ -1177,7 +1271,7 @@ client specification and performs an update.
 ``p4port``
     (optional): the :samp:`{host}:{port}` string describing how to get to the P4 Depot
     (repository), used as the :option:`-p` argument for all p4 commands.
-    
+
 ``p4user``
     (optional): the Perforce user, used as the :option:`-u` argument to all p4
     commands.
@@ -1253,7 +1347,7 @@ This Source step integrates with :bb:chsrc:`GerritChangeSource`, and will automa
 Gerrit's "virtual branch" (``refs/changes/*``) to download the additionnal changes
 introduced by a pending changeset.
 
-.. index:: Properties; Gerrit integration
+.. index:: double: Gerrit integration; Git (Slave-Side) Build Step
 
 Gerrit integration can be also triggered using forced build with ``gerrit_change``
 property with value in format: ``change_number/patchset_number``.
@@ -1319,7 +1413,7 @@ This Source step integrates with :bb:chsrc:`GerritChangeSource`, and will
 automatically use the :command:`repo download` command of repo to
 download the additionnal changes introduced by a pending changeset.
 
-.. index:: Properties; Gerrit integration
+.. index:: double: Gerrit integration; Repo (Slave-Side) Build Step
 
 Gerrit integration can be also triggered using forced build with following properties:
 ``repo_d``, ``repo_d[0-9]``, ``repo_download``, ``repo_download[0-9]``
@@ -1414,7 +1508,7 @@ The :bb:step:`ShellCommand` arguments are:
     :file:`build`).
 
     For example::
-    
+
         from buildbot.steps.shell import ShellCommand
         f.addStep(ShellCommand(command=["make", "test"],
                                workdir="build/tests"))
@@ -1444,13 +1538,13 @@ The :bb:step:`ShellCommand` arguments are:
     To avoid the need of concatenating path together in the master config file,
     if the value is a list, it will be joined together using the right platform
     dependant separator.
-    
+
     Those variables support expansion so that if you just want to prepend
     :file:`/home/buildbot/bin` to the :envvar:`PATH` environment variable, you can do
     it by putting the value ``${PATH}`` at the end of the value like
     in the example below. Variables that don't exist on the slave will be
     replaced by ``""``. ::
-    
+
         from buildbot.steps.shell import ShellCommand
         f.addStep(ShellCommand(
                       command=["make", "test"],
@@ -1501,7 +1595,7 @@ The :bb:step:`ShellCommand` arguments are:
     :file:`_trial_temp/test.log`. It is often useful to watch these files
     as the command runs, rather than using :command:`/bin/cat` to dump
     their contents afterwards.
-    
+
     The ``logfiles=`` argument allows you to collect data from these
     secondary logfiles in near-real-time, as the step is running. It
     accepts a dictionary which maps from a local Log name (which is how
@@ -1510,7 +1604,7 @@ The :bb:step:`ShellCommand` arguments are:
     of options. Each named file will be polled on a regular basis (every couple
     of seconds) as the build runs, and any new text will be sent over to the
     buildmaster.
-    
+
     If you provide a dictionary of options instead of a string, you must specify
     the ``filename`` key. You can optionally provide a ``follow`` key which
     is a boolean controlling whether a logfile is followed or concatenated in its
@@ -1518,12 +1612,12 @@ The :bb:step:`ShellCommand` arguments are:
     append, where the pre-existing contents are not interesting.  The default value
     for ``follow`` is ``False``, which gives the same behavior as just
     providing a string filename. ::
-    
+
         from buildbot.steps.shell import ShellCommand
         f.addStep(ShellCommand(
                       command=["make", "test"],
                       logfiles={"triallog": "_trial_temp/test.log"}))
-    
+
     The above example will add a log named 'triallog' on the master,
     based on :file:`_trial_temp/test.log` on the slave. ::
 
@@ -1554,7 +1648,7 @@ The :bb:step:`ShellCommand` arguments are:
     This will be used to describe the command (on the Waterfall display)
     while the command is still running. It should be a single
     imperfect-tense verb, like `compiling` or `testing`. The preferred
-    form is a list of short strings, which allows the HTML 
+    form is a list of short strings, which allows the HTML
     displays to create narrower columns by emitting a <br> tag between each
     word. You may also provide a single string.
 
@@ -1568,7 +1662,7 @@ The :bb:step:`ShellCommand` arguments are:
     actual command arguments will be used to construct the description.
     This may be a bit too wide to fit comfortably on the Waterfall
     display. ::
-    
+
         from buildbot.steps.shell import ShellCommand
         f.addStep(ShellCommand(command=["make", "test"],
                                description=["testing"],
@@ -1579,7 +1673,7 @@ The :bb:step:`ShellCommand` arguments are:
     after ``description`` and ``descriptionDone``). This can be used to distinguish
     between build steps that would display the same descriptions in the waterfall.
     This parameter may be set to list of short strings, a single string, or ``None``.
-    
+
     For example, a builder might use the ``Compile`` step to build two different
     codebases. The ``descriptionSuffix`` could be set to `projectFoo` and `projectBar`,
     respectively for each step, which will result in the full descriptions
@@ -1608,6 +1702,12 @@ The :bb:step:`ShellCommand` arguments are:
     WARNINGS.
     The default is to treat just 0 as successful. (``{0:SUCCESS}``)
     any exit code not present in the dictionary will be treated as ``FAILURE``
+
+``user``
+    When this is not None, runs the command as the given user by wrapping the
+    command with 'sudo', which typically requires root permissions to run
+    (and as discussed in the :ref:`System Architecture <System-Architecture>`
+    section, is generally not a good idea).
 
 .. bb:step:: Configure
 
@@ -1682,7 +1782,7 @@ another colon and a line number range. For example:
 .. code-block:: none
 
     # Sample warning suppression file
-    
+
     mi_packrec.c : .*result of 32-bit shift implicitly converted to 64 bits.* : 560-600
     DictTabInfo.cpp : .*invalid access to non-static.*
     kernel_types.h : .*only defines private constructors and has no friends.* : 51
@@ -1717,8 +1817,8 @@ left again. For this, specify regexps for the arguments
 entered into in the first matched group. The defaults, which are suitable for
 .. GNU Make, are these::
 
-..     directoryEnterPattern = "make.*: Entering directory [\"`'](.*)['`\"]"
-..     directoryLeavePattern = "make.*: Leaving directory"
+    directoryEnterPattern = "make.*: Entering directory [\"`'](.*)['`\"]"
+    directoryLeavePattern = "make.*: Leaving directory"
 
 (TODO: this step needs to be extended to look for GCC error messages
 as well, and collect them into a separate logfile, along with the
@@ -2190,7 +2290,7 @@ This step takes the following arguments:
 .. bb:step:: PyLint
 
 .. _Step-PyLint:
-    
+
 PyLint
 ++++++
 
@@ -2278,7 +2378,7 @@ This step takes the following arguments:
 ``jobs``
    (optional) Number of slave-resident workers to use when running the tests.
    Defaults to 1 worker.  Only works with Twisted>=12.3.0.
-   
+
 
 .. bb:step:: RemovePYCs
 
@@ -2327,7 +2427,7 @@ status to the uploaded file. ::
 
     from buildbot.steps.shell import ShellCommand
     from buildbot.steps.transfer import FileUpload
-    
+
     f.addStep(ShellCommand(command=["make", "docs"]))
     f.addStep(FileUpload(slavesrc="docs/reference.html",
                          masterdest="/home/bb/public_html/ref.html",
@@ -2351,7 +2451,7 @@ side::
 
     from buildbot.steps.shell import ShellCommand
     from buildbot.steps.transfer import FileDownload
-    
+
     f.addStep(FileDownload(mastersrc="~/todays_build_config.txt",
                            slavedest="build_config.txt"))
     f.addStep(ShellCommand(command=["make", "config"]))
@@ -2418,7 +2518,7 @@ the directory can be found under :file:`docs`::
 
     from buildbot.steps.shell import ShellCommand
     from buildbot.steps.transfer import DirectoryUpload
-    
+
     f.addStep(ShellCommand(command=["make", "docs"]))
     f.addStep(DirectoryUpload(slavesrc="docs",
                               masterdest="~/public_html/docs",
@@ -2500,7 +2600,7 @@ In this example, the step renames a tarball based on the day of the week. ::
 
     from buildbot.steps.transfer import FileUpload
     from buildbot.steps.master import MasterShellCommand
-    
+
     f.addStep(FileUpload(slavesrc="widgetsoft.tar.gz",
                          masterdest="/var/buildoutputs/widgetsoft-new.tar.gz"))
     f.addStep(MasterShellCommand(command="""
@@ -2530,6 +2630,16 @@ be substituted using :ref:`Interpolate`.
 ``interruptSignal``
    (optional) Signal to use to end the process, if the step is interrupted.
 
+.. bb:step:: LogRenderable
+
+LogRenderable
++++++++++++++
+
+.. py:class:: buildbot.steps.master.LogRenderable
+
+This build step takes content which can be renderable and logs it in a pretty-printed format.
+It can be useful for debugging properties during a build.
+
 .. index:: Properties; from steps
 
 .. _Setting-Properties:
@@ -2546,13 +2656,29 @@ These steps set properties on the master based on information from the slave.
 SetProperty
 +++++++++++
 
-.. py:class:: buildbot.steps.shell.SetProperty
+.. py:class:: buildbot.steps.master.SetProperty
+
+SetProperty takes two arguments of ``property`` and ``value`` where the ``value`` is to be assigned to the ``property`` key.
+It is usually called with the ``value`` argument being specifed as a :ref:`Interpolate` object
+which allows the value to be built from other property values::
+
+    from buildbot.steps.master import SetProperty
+    from buildbot.process.properties import Interpolate
+    f.addStep(SetProperty(property="SomeProperty",
+        value=Interpolate("sch=%(prop:scheduler)s, slave=%(prop:slavename)s")))
+
+.. bb:step:: SetPropertyFromCommand
+
+SetPropertyFromCommand
+++++++++++++++++++++++
+
+.. py:class:: buildbot.steps.shell.SetPropertyFromCommand
 
 This buildstep is similar to :bb:step:`ShellCommand`, except that it captures the
 output of the command into a property.  It is usually used like this::
 
     from buildbot.steps import shell
-    f.addStep(shell.SetProperty(command="uname -a", property="uname"))
+    f.addStep(shell.SetPropertyFromCommand(command="uname -a", property="uname"))
 
 This runs ``uname -a`` and captures its stdout, stripped of leading
 and trailing whitespace, in the property ``uname``.  To avoid stripping,
@@ -2564,7 +2690,7 @@ object, allowing the property name to be built from other property values.
 The more advanced usage allows you to specify a function to extract
 properties from the command output.  Here you can use regular
 expressions, string interpolation, or whatever you would like. In this
-form, :func:`extract_fn` should be passed, and not :class:`Property`. 
+form, :func:`extract_fn` should be passed, and not :class:`Property`.
 The :func:`extract_fn` function is called with three arguments: the exit status of the
 command, its standard output as a string, and its standard error as
 a string.  It should return a dictionary containing all new properties. ::
@@ -2572,12 +2698,12 @@ a string.  It should return a dictionary containing all new properties. ::
     def glob2list(rc, stdout, stderr):
         jpgs = [ l.strip() for l in stdout.split('\n') ]
         return { 'jpgs' : jpgs }
-    f.addStep(SetProperty(command="ls -1 *.jpg", extract_fn=glob2list))
+    f.addStep(SetPropertyFromCommand(command="ls -1 *.jpg", extract_fn=glob2list))
 
 Note that any ordering relationship of the contents of stdout and
 stderr is lost.  For example, given ::
 
-    f.addStep(SetProperty(
+    f.addStep(SetPropertyFromCommand(
         command="echo output1; echo error >&2; echo output2",
         extract_fn=my_extract))
 
@@ -2608,11 +2734,12 @@ displayed as :envvar:`TMP` in the Windows GUI. ::
     from buildbot.steps.shell import Compile
 
     f.addStep(SetPropertiesFromEnv(variables=["SOME_JAVA_LIB_HOME", "JAVAC"]))
-    f.addStep(Compile(commands=[Interpolate("%(prop:JAVAC)s"), "-cp", Interpolate("%(prop:SOME_JAVA_LIB_HOME)s")))
+    f.addStep(Compile(commands=[Interpolate("%(prop:JAVAC)s"), "-cp", Interpolate("%(prop:SOME_JAVA_LIB_HOME)s")]))
 
 Note that this step requires that the Buildslave be at least version 0.8.3.
 For previous versions, no environment variables are available (the slave
 environment will appear to be empty).
+
 
 .. index:: Properties; triggering schedulers
 
@@ -2630,7 +2757,7 @@ The counterpart to the Triggerable described in section
     f.addStep(Trigger(schedulerNames=['build-prep'],
                       waitForFinish=True,
                       updateSourceStamp=True,
-                      set_properties={ 'quick' : False })
+                      set_properties={ 'quick' : False }))
 
 The ``schedulerNames=`` argument lists the :bb:sched:`Triggerable` schedulers
 that should be triggered when this step is executed.  Note that
@@ -2656,7 +2783,7 @@ all of the builds use exactly the same :class:`SourceStamp`s, even if other
 specified), then the exact same SourceStamps are used. If ``alwaysUseLatest`` is
 True, then no SourceStamps are given, corresponding to using the latest revisions
 of the repositories specified in the Source steps. This is useful if the triggered
-builds use to a different source repository.  The argument ``sourceStamps`` 
+builds use to a different source repository.  The argument ``sourceStamps``
 accepts a list of dictionaries containing the keys ``branch``, ``revision``,
 ``repository``, ``project``, and optionally ``patch_level``,
 ``patch_body``, ``patch_subdir``, ``patch_author`` and ``patch_comment``
@@ -2840,7 +2967,7 @@ The step takes the following parameters
     Repos to activate for chroot building.
 
 .. bb:step:: DebCowbuilder
-   
+
 DebCowbuilder
 +++++++++++++
 
@@ -2872,7 +2999,7 @@ HLint
 
 The :bb:step:`HLint` step runs Twisted Lore, a lint-like checker over a set of
 ``.xhtml`` files.  Any deviations from recommended style is flagged and put
-in the output log.  
+in the output log.
 
 The step looks at the list of changes in the build to determine which files to
 check - it does not check all files.  It specifically excludes any ``.xhtml``

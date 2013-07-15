@@ -7,6 +7,8 @@ Nine
 ..
     For the moment, release notes for the nine branch go here, for ease of merging.
 
+* The sourcestamp DB connector now returns a ``patchid`` field.
+
 * Buildbot's tests now require at least Mock-0.8.0.
 
 * Buildbot no longer polls the database for jobs.  The
@@ -58,6 +60,8 @@ Nine
 * The debug client no longer supports requesting builds (the ``requestBuild`` method has been removed).
   If you have been using this method in production, consider instead creating a new change source, using the :bb:sched:`ForceScheduler`, or using one of the try schedulers.
 
+* SQLAlchemy-Migrate-0.6.1 is no longer supported.
+
 ..
     Any change that adds a feature or fixes a bug should have an entry here.
     Most simply need an additional bulleted list item, but more significant
@@ -65,82 +69,74 @@ Nine
 
 The following are the release notes for Buildbot |version|.
 
-* The ``MasterShellCommand`` step now correctly handles environment variables passed as list.
-* The master now poll the database for pending tasks when running buildbot in multi-master mode.
-
 Master
 ------
 
 Features
 ~~~~~~~~
 
-* The algorithm to match build requests to slaves has been rewritten in :bb:pull:`615`.
-  The new algorithm automatically takes locks into account, and will not schedule a build only to have it wait on a lock.
-  The algorithm also introduces a ``canStartBuild`` builder configuration option which can be used to prevent a build request being assigned to a slave.
+* A new :py:class:`FlattenList` Renderable has been added which can flatten nested lists.
 
-* ``buildbot stop`` and ``buildbot restart`` now accept ``--clean`` to stop or restart the master cleanly (allowing all running builds to complete first).
+* Builder configurations can now include a ``description``, which will appear in the web UI to help humans figure out what the builder does.
 
-* The :bb:status:`IRC` bot now supports clean shutdown and immediate shutdown by using the command 'shutdown'.
-  To allow the command to function, you must provide `allowShutdown=True`.
+* The web UI now supports a PNG Status Resource that can be accessed publicly from for example README.md files or wikis or whatever other resource.
+  This view produces an image in PNG format with information about the last build for the given builder name or whatever other build number if is passed as an argument to the view.
 
-* :bb:step:`CopyDirectory` has been added.
+* The web hooks now include support for Bitbucket.
 
-* :bb:sched:`BuildslaveChoiceParameter` has been added to provide a way to explicitly choose a buildslave
-  for a given build.
+* The web hooks now include support for GitLab.
 
-* default.css now wraps preformatted text by default.
+* The 'Rebuild' button on the web pages for builds features a dropdown to choose whether to 
+  rebuild from exact revisions or from the same sourcestamps (ie, update branch references)
 
-* Slaves can now be paused through the web status.
+* The ``start``, ``restart``, and ``reconfig`` commands will now wait for longer than 10 seconds as long as the master continues producing log lines indicating that the configuration is progressing.
 
-* The latent buildslave support is less buggy, thanks to :bb:pull:`646`.
+* Git source checkout step now supports reference repositories.
 
-* The ``treeStableTimer`` for ``AnyBranchScheduler`` now maintains separate timers for separate branches, codebases, projects, and repositories.
+* The ``comments`` field of changes is no longer limited to 1024 characters on MySQL and Postgres.  See :bb:bug:`2367` and :bb:pull:`736`.
 
-* :bb:step:`SVN` has a new option `preferLastChangedRev=True` to use the last changed revision for ``got_revision``
+* The WebStatus builder page can now filter pending/current/finished builds by property parameters of the form ``?property.<name>=<value>``.
 
-* The build request DB connector method :py:meth:`~buildbot.db.buildrequests.BuildRequestsConnectorComponent.getBuildRequests` can now filter by branch and repository.
+* The Console view now supports codebases.
 
+* Build status can be sent to GitHub.
+  Depends on txgithub package.
+  See :bb:status:`GitHubStatus` and `GitHub Commit Status <https://github.com/blog/1227-commit-status-api>`_.
+
+* The web UI now shows sourcestamp information for builders that use multiple codebases (instead of the generic
+  "multiple rev" placeholder that was shown before).
+
+* Added zsh and bash tab-completions support for 'buildbot' command.
+
+* An example of a declarative configuration is included in :bb:src:`master/contrib/SimpleConfig.py`, with copious comments.
+
+* A new argument ``createAbsoluteSourceStamps`` has been added to ``SingleBranchScheduler`` for use with multiple codebases.
+
+* The WebStatus :ref:`Authorization` support now includes a ``view`` action which can be used to restrict read-only access to the Buildbot instance.
+
+* Information about the buildslaves (admin, host, etc) is now persisted in the database and available even if
+  the slave is not connected.
 
 Deprecations, Removals, and Non-Compatible Changes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* The ``split_file`` function for :bb:chsrc:`SVNPoller` may now return a dictionary instead of a tuple.
-  This allows it to add extra information about a change (such as ``project`` or ``repository``).
-
-* The ``workdir`` build property has been renamed to ``builddir``.
-  This change accurately reflects its content; the term "workdir" means something different.
-
-* The ``Blocker`` step has been removed.
-
-* Several polling ChangeSources are now documented to take a ``pollInterval`` argument, instead of ``pollinterval``.
-  The old name is still supported.
-
-* StatusReceivers' checkConfig method should no longer take an `errors` parameter.
-  It should indicate errors by calling :py:func:`~buildbot.config.error`.
-
-* Build steps now require that their name be a string.
-  Previously, they would accept anything, but not behave appropriately.
-
-* The web status no longer displays a potentially misleading message, indicating whether the build
-  can be rebuilt exactly.
-
 Changes for Developers
 ~~~~~~~~~~~~~~~~~~~~~~
-
-* Added an optional build start callback to ``buildbot.status.status_gerrit.GerritStatusPush``
-
-* An optional ``startCB`` callback to :bb:status:`GerritStatusPush` can be used
-  to send a message back to the committer.
-  See the linked documentation for details.
-
-* bb:sched:`ChoiceStringParameter` has a new method ``getChoices`` that can be used to generate
-  content dynamically for Force scheduler forms.
 
 Slave
 -----
 
 Features
 ~~~~~~~~
+
+* Added zsh and bash tab-completions support for 'buildslave' command.
+
+Fixes
+~~~~~
+
+* Fixed an issue when buildstep stop() was raising an exception incorrectly if timeout for 
+  buildstep wasn't set or was None (see :bb:pull:`753`) thus keeping watched logfiles open
+  (this prevented their removal on Windows in subsequent builds).
 
 Deprecations, Removals, and Non-Compatible Changes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -149,9 +145,11 @@ Details
 -------
 
 For a more detailed description of the changes made in this version, see the
-git log itself::
+git log itself:
 
-   git log v0.8.7..master
+.. code-block:: bash
+
+   git log v0.8.8..master
 
 Older Versions
 --------------
@@ -162,5 +160,6 @@ Newer versions are also available here:
 .. toctree::
     :maxdepth: 1
 
+    0.8.8
     0.8.7
     0.8.6

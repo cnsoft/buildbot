@@ -24,8 +24,6 @@ Builds
     .. todo:
 
         * Currently build properties aren't available in this resource type
-        * ``slaveid`` is always -1, since slaves aren't in the data API yet
-        * add ``builderName``?
 
     .. note:
 
@@ -82,9 +80,9 @@ Update Methods
 
 All update methods are available as attributes of ``master.data.updates``.
 
-.. py:class:: buildbot.data.builds.BuildsResourceType
+.. py:class:: buildbot.data.builds.BuildResourceType
 
-    .. py:method:: newBuild(builderid, buildrequestid, slaveid)
+    .. py:method:: newBuild(builderid, buildrequestid, buildslaveid)
 
         :param integer builderid: builder performing this build
         :param integer buildrequstid: build request being built

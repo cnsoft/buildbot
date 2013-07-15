@@ -15,6 +15,7 @@
 
 from __future__ import with_statement
 
+import time
 import os, sys
 import twisted
 from twisted.python import versions
@@ -62,7 +63,7 @@ class TestStart(misc.StdoutAssertionsMixin, dirs.DirsMixin, unittest.TestCase):
 
     def test_start_not_basedir(self):
         self.assertEqual(start.start(mkconfig(basedir='doesntexist')), 1)
-        self.assertInStdout('not a buildmaster directory')
+        self.assertInStdout('invalid buildmaster directory')
 
     def runStart(self, **config):
         args=[
@@ -96,6 +97,16 @@ class TestStart(misc.StdoutAssertionsMixin, dirs.DirsMixin, unittest.TestCase):
         def cb((out, err, rc)):
             self.assertEqual((rc, err), (0, ''))
             self.assertSubstring('BuildMaster is running', out)
+
+        @d.addBoth
+        def flush(x):
+            # wait for the pidfile to go away after the reactor.stop
+            # in buildbot.tac takes effect
+            pidfile = os.path.join('basedir', 'twistd.pid')
+            while os.path.exists(pidfile):
+                time.sleep(0.01)
+            return x
+
         return d
 
     if twisted.version <= versions.Version('twisted', 9, 0, 0):

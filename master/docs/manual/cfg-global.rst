@@ -25,7 +25,7 @@ All keys are optional::
 The ``db_url`` key indicates the database engine to use.
 The format of this parameter is completely documented at http://www.sqlalchemy.org/docs/dialects/, but is generally of the form::
 
-     driver://[username:password@]host:port/database[?args]
+     "driver://[username:password@]host:port/database[?args]"
 
 These parameters can be specified directly in the configuration dictionary, as ``c['db_url']`` and ``c['db_poll_interval']``, although this method is deprecated.
 
@@ -358,7 +358,7 @@ Prioritizing Builders
 .. code-block:: python
 
    def prioritizeBuilders(buildmaster, builders):
-       # ...
+       ...
    c['prioritizeBuilders'] = prioritizeBuilders
 
 By default, buildbot will attempt to start builds on builders in order, beginning with the builder with the oldest pending request.
@@ -672,7 +672,25 @@ This server is configured with the :bb:cfg:`www` configuration key, which specif
     Any versions less than this value will not be available.
     This can be used to ensure that no clients are depending on API versions that will soon be removed from Buildbot.
 
-.. _TwistedConch: http://twistedmatrix.com/trac/wiki/TwistedConch
+``plugins``
+    This key gives a dictionary of additional UI plugins to load, along with configuration for those plugins.
+    These plugins must be separately installed in the Python environment, e.g., ``pip install buildbot-www-waterfall``.
+    For example ::
+
+        c['www'] = {
+            'plugins': {'waterfall': {'num_builds': 50}}
+        }
+
+``debug``
+    If true, then debugging information will be output to the browser.
+    This is best set to false (the default) on production systems, to avoid the possibility of information leakage.
+
+``allowed_origins``
+    This gives a list of origins which are allowed to access the Buildbot API (including control via JSONRPC 2.0).
+    It implements cross-origin request sharing (CORS), allowing pages at origins other than the Buildbot UI to use the API.
+    Each origin is interpreted as filename match expression, with ``?`` matching one character and ``*`` matching anything.
+    Thus ``['*']`` will match all origins, and ``['https://*.buildbot.net']`` will match secure sites under ``buildbot.net``.
+    The Buildbot UI will operate correctly without this parameter; it is only useful for allowing access from other web applications.
 
 .. bb:cfg:: codebaseGenerator
 
@@ -701,3 +719,6 @@ If changes come from different repositories, extra processing will be needed to 
 This codebase will then be a logical name for the combination of repository and or branch etc.
 
 The `codebaseGenerator` accepts a change dictionary as produced by the :py:class:`buildbot.db.changes.ChangesConnectorComponent <changes connector component>`, with a changeid equal to `None`.
+
+.. _TwistedConch: http://twistedmatrix.com/trac/wiki/TwistedConch
+

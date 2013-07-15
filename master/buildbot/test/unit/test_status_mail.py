@@ -231,11 +231,14 @@ class TestMailNotifier(unittest.TestCase):
         self.db = self.master.db
         self.db.insertTestData([
             fakedb.Master(id=92),
+            fakedb.Buildslave(id=13, name='sl'),
             fakedb.Buildset(id=99, results=SUCCESS, reason="testReason"),
             fakedb.BuildRequest(id=11, buildsetid=99, buildername='Builder1'),
-            fakedb.Build(number=0, buildrequestid=11, slaveid=-1, masterid=92),
+            fakedb.Build(number=0, buildrequestid=11, buildslaveid=13,
+                masterid=92),
             fakedb.BuildRequest(id=12, buildsetid=99, buildername='Builder2'),
-            fakedb.Build(number=0, buildrequestid=12, slaveid=-1, masterid=92),
+            fakedb.Build(number=0, buildrequestid=12, buildslaveid=13,
+                masterid=92),
         ])
         mn.master = self.master
 
@@ -251,7 +254,7 @@ class TestMailNotifier(unittest.TestCase):
         @d.addCallback
         def check(_):
             fakeBuildMessage.assert_called_with(
-                    "Buildset Complete: testReason",
+                    "(whole buildset)",
                     [build1, build2], SUCCESS)
         return d
 
@@ -288,9 +291,11 @@ class TestMailNotifier(unittest.TestCase):
         self.db = self.master.db
         self.db.insertTestData([
             fakedb.Master(id=92),
+            fakedb.Buildslave(id=13, name='sl'),
             fakedb.Buildset(id=99, results=SUCCESS, reason="testReason"),
             fakedb.BuildRequest(id=11, buildsetid=99, buildername='Builder'),
-            fakedb.Build(number=0, buildrequestid=11, slaveid=-1, masterid=92),
+            fakedb.Build(number=0, buildrequestid=11, buildslaveid=13,
+                masterid=92),
         ])
         mn.master = self.master
 
@@ -342,9 +347,11 @@ class TestMailNotifier(unittest.TestCase):
         self.db = self.master.db
         self.db.insertTestData([
             fakedb.Master(id=92),
+            fakedb.Buildslave(id=13, name='sl'),
             fakedb.Buildset(id=99, results=SUCCESS, reason="testReason"),
             fakedb.BuildRequest(id=11, buildsetid=99, buildername='Builder'),
-            fakedb.Build(number=0, buildrequestid=11, slaveid=-1, masterid=92),
+            fakedb.Build(number=0, buildrequestid=11, buildslaveid=13,
+                masterid=92),
         ])
         mn.master = self.master
 
@@ -411,9 +418,11 @@ class TestMailNotifier(unittest.TestCase):
         self.db = self.master.db
         self.db.insertTestData([
             fakedb.Master(id=22),
+            fakedb.Buildslave(id=13, name='sl'),
             fakedb.Buildset(id=99, results=SUCCESS, reason="testReason"),
             fakedb.BuildRequest(id=11, buildsetid=99, buildername='Builder'),
-            fakedb.Build(number=0, buildrequestid=11, slaveid=-1, masterid=22),
+            fakedb.Build(number=0, buildrequestid=11, buildslaveid=13,
+                masterid=22),
         ])
         mn.master = self.master
 
@@ -655,9 +664,11 @@ class TestMailNotifier(unittest.TestCase):
         self.db = self.master.db
         self.db.insertTestData([
             fakedb.Master(id=92),
+            fakedb.Buildslave(id=13, name='sl'),
             fakedb.Buildset(id=99, results=SUCCESS, reason="testReason"),
             fakedb.BuildRequest(id=11, buildsetid=99, buildername='Builder'),
-            fakedb.Build(number=0, buildrequestid=11, masterid=92, slaveid=-1),
+            fakedb.Build(number=0, buildrequestid=11, masterid=92,
+                buildslaveid=13),
             fakedb.Change(changeid=9123),
             fakedb.ChangeUser(changeid=9123, uid=1),
             fakedb.User(uid=1, identifier="tdurden"),
@@ -762,10 +773,13 @@ class TestMailNotifier(unittest.TestCase):
         self.db = self.master.db
         self.db.insertTestData([
             fakedb.Master(id=92),
+            fakedb.Buildslave(id=13, name='sl'),
             fakedb.Buildset(id=99, results=SUCCESS, reason="testReason"),
             fakedb.BuildRequest(id=11, buildsetid=99, buildername='Builder'),
-            fakedb.Build(number=0, buildrequestid=11, slaveid=-1, masterid=92),
-            fakedb.Build(number=1, buildrequestid=11, slaveid=-1, masterid=92),
+            fakedb.Build(number=0, buildrequestid=11, buildslaveid=13,
+                masterid=92),
+            fakedb.Build(number=1, buildrequestid=11, buildslaveid=13,
+                masterid=92),
             fakedb.Change(changeid=9123),
             fakedb.Change(changeid=9124),
             fakedb.ChangeUser(changeid=9123, uid=1),

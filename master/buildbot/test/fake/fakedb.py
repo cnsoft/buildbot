@@ -22,11 +22,10 @@ the real connector components.
 import copy
 import base64
 import hashlib
-from operator import itemgetter
 from buildbot.util import json, epoch2datetime, datetime2epoch
 from twisted.python import failure
 from twisted.internet import defer, reactor
-from buildbot.db import buildrequests, schedulers
+from buildbot.db import buildrequests, schedulers, changesources
 from buildbot.test.util import validation
 
 # Fake DB Rows
@@ -140,6 +139,29 @@ class BuildRequestClaim(Row):
 
     required_columns = ('brid', 'masterid', 'claimed_at')
 
+
+class ChangeSource(Row):
+    table = "changesources"
+
+    defaults = dict(
+        id = None,
+        name = 'csname',
+        name_hash = None,
+    )
+
+    id_column = 'id'
+    hashedColumns = [ ( 'name_hash', ('name',) ) ]
+
+
+class ChangeSourceMaster(Row):
+    table = "changesource_masters"
+
+    defaults = dict(
+        changesourceid = None,
+        masterid = None,
+    )
+
+    required_columns = ( 'changesourceid', 'masterid' )
 
 class Change(Row):
     table = "changes"
@@ -295,6 +317,19 @@ class BuildsetProperty(Row):
     required_columns = ( 'buildsetid', )
 
 
+class Buildslave(Row):
+    table = "buildslaves"
+
+    defaults = dict(
+        id = None,
+        name = 'some:slave',
+        info = {"a":"b"},
+    )
+
+    id_column = 'id'
+    required_columns = ('name', )
+
+
 class BuildsetSourceStamp(Row):
     table = "buildset_sourcestamps"
 
@@ -362,7 +397,7 @@ class Build(Row):
         number = 29,
         buildrequestid = None,
         builderid = None,
-        slaveid = -1,
+        buildslaveid = -1,
         masterid = None,
         started_at = 1304262222,
         complete_at = None,
@@ -370,7 +405,7 @@ class Build(Row):
         results = None)
 
     id_column = 'id'
-    required_columns = ( 'buildrequestid', 'masterid' ) # slaveid omitted temporarily
+    required_columns = ( 'buildrequestid', 'masterid', 'buildslaveid' )
 
 class Step(Row):
     table = "steps"
@@ -441,6 +476,7 @@ class Builder(Row):
     id_column = 'id'
     hashedColumns = [ ( 'name_hash', ('name',) ) ]
 
+
 class BuilderMaster(Row):
     table = "builder_masters"
 
@@ -453,6 +489,30 @@ class BuilderMaster(Row):
     id_column = 'id'
     required_columns = ( 'builderid', 'masterid' )
 
+class ConnectedBuildslave(Row):
+    table = "connected_buildslaves"
+
+    defaults = dict(
+        id = None,
+        masterid = None,
+        buildslaveid = None,
+    )
+
+    id_column = 'id'
+    required_columns = ( 'masterid', 'buildslaveid' )
+
+class ConfiguredBuildslave(Row):
+    table = "configured_buildslaves"
+
+    defaults = dict(
+        id = None,
+        buildermasterid = None,
+        buildslaveid = None,
+    )
+
+    id_column = 'id'
+    required_columns = ( 'buildermasterid', 'buildslaveid' )
+
 # Fake DB Components
 
 class FakeDBComponent(object):
@@ -463,17 +523,89 @@ class FakeDBComponent(object):
         self.t = testcase
         self.setUp()
 
-    def applyDataOptions(self, l, opts):
-        if 'sort' in opts:
-            for k,r in reversed(opts['sort']):
-                if k in self.data2db:
-                    k = self.data2db[k]
-                l.sort(key=itemgetter(k), reverse = r)
-        if 'start' in opts and opts['start'] != 0:
-            l = l[int(opts['start']):]
-        if 'count' in opts and opts['count'] != 0:
-            l = l[:int(opts['count'])]
-        return l
+class FakeChangeSourcesComponent(FakeDBComponent):
+
+    def setUp(self):
+        self.changesources = {}
+        self.changesource_masters = {}
+        self.states = {}
+
+    def insertTestData(self, rows):
+        pass
+        for row in rows:
+            if isinstance(row, ChangeSource):
+                self.changesources[row.id] = row.name
+            if isinstance(row, ChangeSourceMaster):
+                self.changesource_masters[row.changesourceid] = row.masterid
+
+    # component methods
+
+    def findChangeSourceId(self, name):
+        for cs_id, cs_name in self.changesources.iteritems():
+            if cs_name == name:
+                return defer.succeed(cs_id)
+        new_id = (max(self.changesources) + 1) if self.changesources else 1
+        self.changesources[new_id] = name
+        return defer.succeed(new_id)
+
+    def getChangeSource(self, changesourceid):
+        if changesourceid in self.changesources:
+            rv = dict(
+                id=changesourceid,
+                name=self.changesources[changesourceid],
+                masterid=None)
+            # only set masterid if the relevant changesource master exists and
+            # is active
+            rv['masterid'] = self.changesource_masters.get(changesourceid)
+            return defer.succeed(rv)
+        else:
+            return None
+
+    def getChangeSources(self, active=None, masterid=None):
+        d = defer.DeferredList([
+            self.getChangeSource(id) for id in self.changesources
+        ])
+        @d.addCallback
+        def filter(results):
+            # filter off the DeferredList results (we know it's good)
+            results = [ r[1] for r in results ]
+            # filter for masterid
+            if masterid is not None:
+                results = [ r for r in results
+                            if r['masterid'] == masterid ]
+            # filter for active or inactive if necessary
+            if active:
+                results = [ r for r in results
+                            if r['masterid'] is not None ]
+            elif active is not None:
+                results = [ r for r in results
+                            if r['masterid'] is None ]
+            return results
+        return d
+
+    def setChangeSourceMaster(self, changesourceid, masterid):
+        current_masterid = self.changesource_masters.get(changesourceid)
+        if current_masterid and masterid is not None:
+            return defer.fail(changesources.ChangeSourceAlreadyClaimedError())
+        self.changesource_masters[changesourceid] = masterid
+        return defer.succeed(None)
+
+    # fake methods
+
+    def fakeChangeSource(self, name, changesourceid):
+        self.changesources[changesourceid] = name
+
+    def fakeChangeSourceMaster(self, changesourceid, masterid):
+        if masterid is not None:
+            self.changesource_masters[changesourceid] = masterid
+        else:
+            del self.changesource_masters[changesourceid]
+
+    # assertions
+
+    def assertChangeSourceMaster(self, changesourceid, masterid):
+        self.t.assertEqual(self.changesource_masters.get(changesourceid),
+                           masterid)
 
 class FakeChangesComponent(FakeDBComponent):
 
@@ -567,10 +699,11 @@ class FakeChangesComponent(FakeDBComponent):
         chdicts = [ self._chdict(self.changes[id]) for id in ids[-count:] ]
         return defer.succeed(chdicts)
 
-    def getChanges(self, opts={}):
+    def getChanges(self):
         chdicts = [ self._chdict(v) for v in self.changes.values() ]
-        return defer.succeed(self.applyDataOptions(chdicts,opts))
-    def getChangesCount(self, opts={}):
+        return defer.succeed(chdicts)
+
+    def getChangesCount(self):
         return len(self.changes)
 
     def _chdict(self, row):
@@ -666,25 +799,25 @@ class FakeSchedulersComponent(FakeDBComponent):
             classifications = dict(
                     (k,v) for (k,v) in classifications.iteritems()
                     if self.db.changes.changes.get(k, sentinel)['branch'] == branch )
-            
+
         if repository != -1:
             # filter out the classifications for the requested branch
             classifications = dict(
                     (k,v) for (k,v) in classifications.iteritems()
                     if self.db.changes.changes.get(k, sentinel)['repository'] == repository )
-            
+
         if project != -1:
             # filter out the classifications for the requested branch
             classifications = dict(
                     (k,v) for (k,v) in classifications.iteritems()
                     if self.db.changes.changes.get(k, sentinel)['project'] == project )
-            
+
         if codebase != -1:
             # filter out the classifications for the requested branch
             classifications = dict(
                     (k,v) for (k,v) in classifications.iteritems()
                     if self.db.changes.changes.get(k, sentinel)['codebase'] == codebase )
-            
+
         return defer.succeed(classifications)
 
     def findSchedulerId(self, name):
@@ -795,7 +928,7 @@ class FakeSourceStampsComponent(FakeDBComponent):
             patch_author=None, patch_comment=None, patch_subdir=None,
             _reactor=reactor):
         if patch_body:
-            patchid = len(self.patches) + 100
+            patchid = len(self.patches) + 1
             while patchid in self.patches:
                 patchid += 1
             self.patches[patchid] = dict(
@@ -839,13 +972,13 @@ class FakeSourceStampsComponent(FakeDBComponent):
             patchid = ssdict['patchid']
             if patchid:
                 ssdict.update(self.patches[patchid])
+                ssdict['patchid'] = patchid
             else:
                 ssdict['patch_body'] = None
                 ssdict['patch_level'] = None
                 ssdict['patch_subdir'] = None
                 ssdict['patch_author'] = None
                 ssdict['patch_comment'] = None
-            del ssdict['patchid']
             return ssdict
         else:
             return None
@@ -1034,6 +1167,147 @@ class FakeBuildsetsComponent(FakeDBComponent):
         return bsid
 
 
+class FakeBuildslavesComponent(FakeDBComponent):
+
+    def setUp(self):
+        self.buildslaves = {}
+        self.configured = {}
+        self.connected = {}
+
+    def insertTestData(self, rows):
+        for row in rows:
+            if isinstance(row, Buildslave):
+                self.buildslaves[row.id] = dict(
+                        id=row.id,
+                        name=row.name,
+                        info=row.info)
+            elif isinstance(row, ConfiguredBuildslave):
+                self.configured[row.id] = dict(
+                        buildermasterid=row.buildermasterid,
+                        buildslaveid=row.buildslaveid)
+            elif isinstance(row, ConnectedBuildslave):
+                self.connected[row.id] = dict(
+                        masterid=row.masterid,
+                        buildslaveid=row.buildslaveid)
+
+    def findBuildslaveId(self, name, _reactor=reactor):
+        validation.verifyType(self.t, 'name', name,
+                validation.IdentifierValidator(50))
+        for m in self.buildslaves.itervalues():
+            if m['name'] == name:
+                return defer.succeed(m['id'])
+        id = len(self.buildslaves) + 1
+        self.buildslaves[id] = dict(
+            id=id,
+            name=name,
+            info={})
+        return defer.succeed(id)
+
+    def _getBuildslaveByName(self, name):
+        for slave in self.buildslaves.itervalues():
+            if slave['name']==name:
+                return slave
+        return None
+
+    def getBuildslave(self, buildslaveid=None, name=None, masterid=None, builderid=None):
+        # get the id and the slave
+        if buildslaveid is None:
+            for slave in self.buildslaves.itervalues():
+                if slave['name'] == name:
+                    buildslaveid = slave['id']
+                    break
+            else:
+                slave = None
+        else:
+            slave = self.buildslaves.get(buildslaveid)
+
+        if not slave:
+            return defer.succeed(None)
+
+        # now get the connection status per builder_master, filtered
+        # by builderid and masterid
+        return defer.succeed(self._mkdict(slave, builderid, masterid))
+
+    def getBuildslaves(self, masterid=None, builderid=None):
+        if masterid is not None or builderid is not None:
+            builder_masters = self.db.builders.builder_masters
+            slaves = []
+            for sl in self.buildslaves.itervalues():
+                configured = [ cfg for cfg in self.configured.itervalues()
+                               if cfg['buildslaveid'] == sl['id'] ]
+                pairs = [ builder_masters[cfg['buildermasterid']]
+                          for cfg in configured ]
+                if builderid is not None and masterid is not None:
+                    if (builderid, masterid) not in pairs:
+                        continue
+                if builderid is not None:
+                    if not any(builderid == p[0] for p in pairs):
+                        continue
+                if masterid is not None:
+                    if not any((masterid == p[1]) for p in pairs):
+                        continue
+                slaves.append(sl)
+        else:
+            slaves = self.buildslaves.values()
+
+        return defer.succeed([
+            self._mkdict(sl, builderid, masterid)
+            for sl in slaves])
+
+    def buildslaveConnected(self, buildslaveid, masterid, slaveinfo):
+        slave = self.buildslaves.get(buildslaveid)
+        # test serialization
+        json.dumps(slaveinfo)
+        if slave is not None:
+            slave['info'] = slaveinfo
+        new_conn = dict(masterid=masterid, buildslaveid=buildslaveid)
+        if new_conn not in self.connected.itervalues():
+            conn_id = max([0] + self.connected.keys()) + 1
+            self.connected[conn_id] = new_conn
+        return defer.succeed(None)
+
+    def buildslaveDisconnected(self, buildslaveid, masterid):
+        del_conn = dict(masterid=masterid, buildslaveid=buildslaveid)
+        for id, conn in self.connected.iteritems():
+            if conn == del_conn:
+                del self.connected[id]
+                break
+        return defer.succeed(None)
+
+    def _configuredOn(self, buildslaveid, builderid=None, masterid=None):
+        cfg = []
+        for cs in self.configured.itervalues():
+            if cs['buildslaveid'] != buildslaveid:
+                continue
+            bid, mid = self.db.builders.builder_masters[cs['buildermasterid']]
+            if builderid is not None and bid != builderid:
+                continue
+            if masterid is not None and mid != masterid:
+                continue
+            cfg.append({'builderid': bid, 'masterid': mid})
+        return cfg
+
+    def _connectedTo(self, buildslaveid, masterid=None):
+        conns = []
+        for cs in self.connected.itervalues():
+            if cs['buildslaveid'] != buildslaveid:
+                continue
+            if masterid is not None and cs['masterid'] != masterid:
+                continue
+            conns.append(cs['masterid'])
+        return conns
+
+    def _mkdict(self, sl, builderid, masterid):
+        return {
+            'id': sl['id'],
+            'slaveinfo': sl['info'],
+            'name': sl['name'],
+            'configured_on': self._configuredOn(sl['id'], builderid, masterid),
+            'connected_to': self._connectedTo(sl['id'], masterid),
+        }
+
+
+
 class FakeStateComponent(FakeDBComponent):
 
     def setUp(self):
@@ -1200,8 +1474,8 @@ class FakeBuildRequestsComponent(FakeDBComponent):
             except KeyError:
                 print "trying to unclaim brid %d, but it's not claimed" % brid
                 return defer.fail(
-                        failure.Failure(buildrequests.AlreadyClaimedError))                
-            
+                        failure.Failure(buildrequests.AlreadyClaimedError))
+
         return defer.succeed(None)
 
     # Code copied from buildrequests.BuildRequestConnectorComponent
@@ -1268,7 +1542,7 @@ class FakeBuildsComponent(FakeDBComponent):
             buildrequestid=row['buildrequestid'],
             builderid=row['builderid'],
             masterid=row['masterid'],
-            slaveid=row['slaveid'],
+            buildslaveid=row['buildslaveid'],
             started_at=epoch2datetime(row['started_at']),
             complete_at=epoch2datetime(row['complete_at']),
             state_strings=json.loads(row['state_strings_json']),
@@ -1299,7 +1573,7 @@ class FakeBuildsComponent(FakeDBComponent):
 
         return defer.succeed(ret)
 
-    def addBuild(self, builderid, buildrequestid, slaveid, masterid,
+    def addBuild(self, builderid, buildrequestid, buildslaveid, masterid,
             state_strings, _reactor=reactor):
         validation.verifyType(self.t, 'state_strings', state_strings,
                 validation.ListValidator(validation.StringValidator()))
@@ -1308,8 +1582,8 @@ class FakeBuildsComponent(FakeDBComponent):
                             if r['builderid']==builderid]) + 1
         self.builds[id] = dict(id=id, number=number,
                 buildrequestid=buildrequestid, builderid=builderid,
-                slaveid=slaveid, masterid=masterid,
-                state_strings_json=json.dumps(state_strings),
+                buildslaveid=buildslaveid, masterid=masterid,
+                state_strings_json=unicode(json.dumps(state_strings)),
                 started_at=_reactor.seconds(), complete_at=None,
                 results=None)
         return defer.succeed((id, number))
@@ -1319,7 +1593,7 @@ class FakeBuildsComponent(FakeDBComponent):
                 validation.ListValidator(validation.StringValidator()))
         b = self.builds.get(buildid)
         if b:
-            b['state_strings_json'] = json.dumps(state_strings)
+            b['state_strings_json'] = unicode(json.dumps(state_strings))
         return defer.succeed(None)
 
     def finishBuild(self, buildid, results, _reactor=reactor):
@@ -1419,7 +1693,7 @@ class FakeStepsComponent(FakeDBComponent):
             'started_at': _reactor.seconds(),
             'complete_at': None,
             'results': None,
-            'state_strings_json': json.dumps(state_strings),
+            'state_strings_json': unicode(json.dumps(state_strings)),
             'urls_json': '[]'}
 
         return defer.succeed((id, number, name))
@@ -1688,8 +1962,8 @@ class FakeMastersComponent(FakeDBComponent):
             return defer.succeed(self.masters[masterid])
         return defer.succeed(None)
 
-    def getMasters(self, opts = {}):
-        return defer.succeed(self.applyDataOptions(self.masters.values(), opts))
+    def getMasters(self):
+        return defer.succeed(sorted(self.masters.values()))
 
     # test helpers
 
@@ -1780,11 +2054,15 @@ class FakeDBConnector(object):
         self._components = []
         self.changes = comp = FakeChangesComponent(self, testcase)
         self._components.append(comp)
+        self.changesources = comp = FakeChangeSourcesComponent(self, testcase)
+        self._components.append(comp)
         self.schedulers = comp = FakeSchedulersComponent(self, testcase)
         self._components.append(comp)
         self.sourcestamps = comp = FakeSourceStampsComponent(self, testcase)
         self._components.append(comp)
         self.buildsets = comp = FakeBuildsetsComponent(self, testcase)
+        self._components.append(comp)
+        self.buildslaves = comp = FakeBuildslavesComponent(self, testcase)
         self._components.append(comp)
         self.state = comp = FakeStateComponent(self, testcase)
         self._components.append(comp)

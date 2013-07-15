@@ -44,32 +44,34 @@ Builders: the workhorses
 
 Since buildbot is a tool whose goal is the automation of software builds,
 it makes sense to me to start from where we tell buildbot how to build
-our software: the builder (or builders, since there can be more than one).
+our software: the `builder` (or builders, since there can be more than one).
 
 Simply put, a builder is an element that is in charge of performing some
 action or sequence of actions, normally something related to building
-software (for example, checking out the source, or "make all"), but it
+software (for example, checking out the source, or ``make all``), but it
 can also run arbitrary commands.
 
 A builder is configured with a list of slaves that it can use to carry out
 its task. The other fundamental piece of information that a builder needs
 is, of course, the list of things it has to do (which will normally run
 on the chosen slave). In buildbot, this list of things is represented
-as a BuildFactory object, which is essentially a sequence of steps,
+as a ``BuildFactory`` object, which is essentially a sequence of steps,
 each one defining a certain operation or command.
 
 Enough talk, let's see an example. For this example, we are going to
 assume that our super software project can be built using a simple
-"make all", and there is another target "make packages" that creates
+``make all``, and there is another target ``make packages`` that creates
 rpm, deb and tgz packages of the binaries. In the real world things
-are usually more complex (for example there may be a "configure" step,
+are usually more complex (for example there may be a ``configure`` step,
 or multiple targets), but the concepts are the same; it will just be a
 matter of adding more steps to a builder, or creating multiple builders,
 although sometimes the resulting builders can be quite complex.
 
 So to perform a manual build of our project we would type this from
 the command line (assuming we are at the root of the local copy of
-the repository)::
+the repository):
+
+.. code-block:: bash
 
     $ make clean    # clean remnants of previous builds
     ...
@@ -95,15 +97,15 @@ something else::
     from buildbot.process.factory import BuildFactory
     from buildbot.steps.source import SVN
     from buildbot.steps.shell import ShellCommand
-     
+
     # first, let's create the individual step objects
-     
+
     # step 1: make clean; this fails if the slave has no local copy, but
     # is harmless and will only happen the first time
-    makeclean = ShellCommand(name = "make clean", 
-                             command = ["make", "clean"], 
+    makeclean = ShellCommand(name = "make clean",
+                             command = ["make", "clean"],
                              description = "make clean")
-     
+
     # step 2: svn update (here updates trunk, see the docs for more
     # on how to update a branch, or make it more generic).
     checkout = SVN(baseURL = 'svn://myrepo/projects/coolproject/trunk',
@@ -111,26 +113,26 @@ something else::
                    username = "foo",
                    password = "bar",
                    haltOnFailure = True )
-     
+
     # step 3: make all
     makeall = ShellCommand(name = "make all",
-                           command = ["make", "all"], 
-                           haltOnFailure = True, 
+                           command = ["make", "all"],
+                           haltOnFailure = True,
                            description = "make all")
-     
+
     # step 4: make packages
     makepackages = ShellCommand(name = "make packages",
                                 command = ["make", "packages"],
                                 haltOnFailure = True,
                                 description = "make packages")
-     
+
     # step 5: upload packages to central server. This needs passwordless ssh
     # from the slave to the server (set it up in advance as part of slave setup)
-    uploadpackages = ShellCommand(name = "upload packages", 
-                                  description = "upload packages", 
+    uploadpackages = ShellCommand(name = "upload packages",
+                                  description = "upload packages",
                                   command = "scp packages/*.rpm packages/*.deb packages/*.tgz someuser@somehost:/repository",
                                   haltOnFailure = True)
-     
+
     # create the build factory and add the steps to it
     f_simplebuild = BuildFactory()
     f_simplebuild.addStep(makeclean)
@@ -138,14 +140,14 @@ something else::
     f_simplebuild.addStep(makeall)
     f_simplebuild.addStep(makepackages)
     f_simplebuild.addStep(uploadpackages)
-     
+
     # finally, declare the list of builders. In this case, we only have one builder
     c['builders'] = [
         BuilderConfig(name = "simplebuild", slavenames = ['slave1', 'slave2', 'slave3'], factory = f_simplebuild)
     ]
 
-So our builder is called "simplebuild" and can run on either of slave1,
-slave2 and slave3.
+So our builder is called ``simplebuild`` and can run on either of ``slave1``,
+``slave2`` and ``slave3``.
 If our repository has other branches besides trunk, we could create
 another one or more builders to build them; in the example, only the
 checkout step would be different, in that it would need to check out
@@ -153,15 +155,15 @@ the specific branch. Depending on how exactly those branches have to be
 built, the shell commands may be recycled, or new ones would have to
 be created if they are different in the branch. You get the idea. The
 important thing is that all the builders be named differently and all
-be added to the c['builders'] value (as can be seen above, it is a list
-of BuilderConfig objects).
+be added to the ``c['builders']`` value (as can be seen above, it is a list
+of ``BuilderConfig`` objects).
 
 Of course the type and number of steps will vary depending on the goal;
 for example, to just check that a commit doesn't break the build,
-we could include just up to the "make all" step. Or we could have a
-builder that performs a more thorough test by also doing "make test"
+we could include just up to the ``make all`` step. Or we could have a
+builder that performs a more thorough test by also doing ``make test``
 or other targets. You get the idea. Note that at each step except the
-very first we use haltOnFailure = True because it would not make sense
+very first we use ``haltOnFailure = True`` because it would not make sense
 to execute a step if the previous one failed (ok, it wouldn't be needed
 for the last step, but it's harmless and protects us if one day we add
 another step after it).
@@ -170,7 +172,7 @@ Schedulers
 ----------
 
 Now this is all nice and dandy, but who tells the builder (or builders)
-to run, and when? This is the job of the scheduler, which is a fancy name
+to run, and when? This is the job of the `scheduler`, which is a fancy name
 for an element that waits for some event to happen, and when it does,
 based on that information decides whether and when to run a builder
 (and which one or ones). There can be more than one scheduler.
@@ -189,21 +191,21 @@ configurable amount of time has passed, run a certain builder (or
 builders). In our example, that's how we would trigger a build every hour::
 
     from buildbot.schedulers.timed import Periodic
-   
+
     # define the periodic scheduler
     hourlyscheduler = Periodic(name = "hourly",
                                builderNames = ["simplebuild"],
                                periodicBuildTimer = 3600)
-     
+
     # define the available schedulers
     c['schedulers'] = [ hourlyscheduler ]
 
-That's it. Every hour this "hourly" scheduler will run the "simplebuild"
+That's it. Every hour this ``hourly`` scheduler will run the ``simplebuild``
 builder. If we have more than one builder that we want to run every hour,
-we can just add them to the builderNames list when defining the scheduler
+we can just add them to the ``builderNames`` list when defining the scheduler
 and they will all be run.
 Or since multiple scheduler are allowed, other schedulers can be defined
-and added to c['schedulers'] in the same way.
+and added to ``c['schedulers']`` in the same way.
 
 Other types of schedulers exist; in particular, there are schedulers
 that can be more dynamic than the periodic one. The typical dynamic
@@ -215,22 +217,22 @@ that the scheduler "magically" learns about changes in the repository
 
     from buildbot.schedulers.basic import SingleBranchScheduler
     from buildbot.changes import filter
-     
+
     # define the dynamic scheduler
     trunkchanged = SingleBranchScheduler(name = "trunkchanged",
                                          change_filter = filter.ChangeFilter(branch = None),
                                          treeStableTimer = 300,
                                          builderNames = ["simplebuild"])
-     
+
     # define the available schedulers
     c['schedulers'] = [ trunkchanged ]
 
 This scheduler receives changes happening to the repository, and among
 all of them, pays attention to those happening in "trunk" (that's what
-branch = None means). In other words, it filters the changes to react
+``branch = None`` means). In other words, it filters the changes to react
 only to those it's interested in. When such changes are detected,
 and the tree has been quiet for 5 minutes (300 seconds), it runs the
-"simplebuild" builder. The treeStableTimer helps in those situations
+``simplebuild`` builder. The ``treeStableTimer`` helps in those situations
 where commits tend to happen in bursts, which would otherwise result in
 multiple build requests queuing up.
 
@@ -240,19 +242,19 @@ above), then we create two dynamic schedulers::
 
     from buildbot.schedulers.basic import SingleBranchScheduler
     from buildbot.changes import filter
-     
+
     # define the dynamic scheduler for trunk
     trunkchanged = SingleBranchScheduler(name = "trunkchanged",
                                          change_filter = filter.ChangeFilter(branch = None),
                                          treeStableTimer = 300,
                                          builderNames = ["simplebuild-trunk"])
-     
+
     # define the dynamic scheduler for the 7.2 branch
     branch72changed = SingleBranchScheduler(name = "branch72changed",
                                             change_filter = filter.ChangeFilter(branch = 'branches/7.2'),
                                             treeStableTimer = 300,
                                             builderNames = ["simplebuild-72"])
-     
+
     # define the available schedulers
     c['schedulers'] = [ trunkchanged, branch72changed ]
 
@@ -263,14 +265,14 @@ changes, within those it's paying attention to, are important and which
 are not. For example, there may be a documentation directory in the branch
 the scheduler is watching, but changes under that directory should not
 trigger a build of the binary. This finer filtering is implemented by
-means of the fileIsImportant argument to the scheduler (full details in
+means of the ``fileIsImportant`` argument to the scheduler (full details in
 the docs and - alas - in the sources).
 
 Change sources
 --------------
 
 Earlier we said that a dynamic scheduler "magically" learns about changes;
-the final piece of the puzzle are change sources, which are precisely the
+the final piece of the puzzle are `change sources`, which are precisely the
 elements in buildbot whose task is to detect changes in the repository
 and communicate them to the schedulers. Note that periodic schedulers
 don't need a change source, since they only depend on elapsed time;
@@ -296,40 +298,42 @@ To complete our example, here's a change source that polls a SVN
 repository every 2 minutes::
 
     from buildbot.changes.svnpoller import SVNPoller, split_file_branches
-     
+
     svnpoller = SVNPoller(svnurl = "svn://myrepo/projects/coolproject",
                           svnuser = "foo",
                           svnpasswd = "bar",
                           pollinterval = 120,
                           split_file = split_file_branches)
-     
+
     c['change_source'] = svnpoller
 
 This poller watches the whole "coolproject" section of the repository,
-so it will detect changes in all the branches. We could have said 
+so it will detect changes in all the branches. We could have said
 
-  svnurl = "svn://myrepo/projects/coolproject/trunk"
+    svnurl = "svn://myrepo/projects/coolproject/trunk"
 
-or 
+or
 
-  svnurl = "svn://myrepo/projects/coolproject/branches/7.2" 
+  svnurl = "svn://myrepo/projects/coolproject/branches/7.2"
 
 to watch only a specific branch.
 
 To watch another project, you need to create another change source --
 and you need to filter changes by project.  For instance, when you
-add a changesource watching project 'superproject' to the above 
+add a change source watching project 'superproject' to the above
 example, you need to change::
 
     trunkchanged = SingleBranchScheduler(name = "trunkchanged",
                                          change_filter = filter.ChangeFilter(branch = None),
-    ...
+                                         # ...
+                                         )
 
 to e.g.::
 
     trunkchanged = SingleBranchScheduler(name = "trunkchanged",
                                          change_filter = filter.ChangeFilter(project = "coolproject", branch = None),
-    ...
+                                         # ...
+                                         )
 
 else coolproject will be built when there's a change in superproject.
 
@@ -343,7 +347,7 @@ above uses.
 And of course this is all SVN-specific, but there are pollers for all the
 popular VCSs.
 
-But note: if you have many projects, branches, and builders it probably pays 
+But note: if you have many projects, branches, and builders it probably pays
 to not hardcode all the schedulers and builders in the configuration, but
 generate them dynamically starting from list of all projects, branches,
 targets etc. and using loops to generate all possible combinations (or
@@ -354,18 +358,18 @@ Status targets
 --------------
 
 Now that the basics are in place, let's go back to the builders, which is
-where the real work happens. Status targets are simply the means buildbot
+where the real work happens. `Status targets` are simply the means buildbot
 uses to inform the world about what's happening, that is, how builders
 are doing. There are many status target: a web interface, a mail notifier,
 an IRC notifier, and others. They are described fairly well in the manual.
 
 One thing I've found useful is the ability to pass a domain name as the
-lookup argument to a mailNotifier, which allows to take an unqualified
+lookup argument to a ``mailNotifier``, which allows to take an unqualified
 username as it appears in the SVN change and create a valid email address
 by appending the given domain name to it::
 
     from buildbot.status import mail
-     
+
     # if jsmith commits a change, mail for the build is sent to jsmith@example.org
     notifier = mail.MailNotifier(fromaddr = "buildbot@example.org",
                                  sendToInterestedUsers = True,
@@ -373,7 +377,7 @@ by appending the given domain name to it::
     c['status'].append(notifier)
 
 The mail notifier can be customized at will by means of the
-messageFormatter argument, which is a function that buildbot calls to
+``messageFormatter`` argument, which is a function that buildbot calls to
 format the body of the email, and to which it makes available lots of
 information about the build. Here all the details.
 
@@ -381,7 +385,7 @@ Conclusion
 ----------
 
 Please note that this article has just scratched the surface; given the
-complexity of the task of build automation, the possiblities are almost
+complexity of the task of build automation, the possibilities are almost
 endless. So there's much, much more to say about buildbot. However,
 hopefully this is a preparation step before reading the official
 manual. Had I found an explanation as the one above when I was approaching
@@ -389,4 +393,4 @@ buildbot, I'd have had to read the manual just once, rather than multiple
 times. Hope this can help someone else.
 
 (Thanks to Davide Brini for permission to include this tutorial,
-derived from one he originally posted at http://backreference.org )
+derived from one he originally posted at http://backreference.org .)

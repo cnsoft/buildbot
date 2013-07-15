@@ -14,8 +14,8 @@ The Buildbot-0.9.x series of releases will give the new APIs time to "settle in"
 Commitment will wait for Buildbot-1.0.0 (as per http://semver.org).
 Once Buildbot reaches version 1.0.0, upgrades will become much easier for users.
 
-To encourage contributions from a wider field of developers, the web application is designed to look like a normal Dojo application.
-Developers familiar with Dojo, but not with Python, should be able to start hacking on the web application quickly.
+To encourage contributions from a wider field of developers, the web application is designed to look like a normal AngularJS application.
+Developers familiar with AngularJS, but not with Python, should be able to start hacking on the web application quickly.
 The web application is "pluggable", so users who develop their own status displays can package those separately from Buildbot itself.
 
 Other goals:
@@ -89,9 +89,8 @@ The "process" part of Buildbot is the part that coordinates all of the other par
 
 The outstanding resource types are:
 
-* buildrequest :runner:
-* buildslave :runner:
-* changesource :runner:
+* buildrequest :runner: (in progress by Maria Marcano)
+* buildslave :runner: (in progress by ewong)
 
 For each resource type, we'll need the following (based on "Adding Resource Types" in ``master/docs/developer/data.rst``).  use this list as a template in the list of types below when you begin a new type.
 
@@ -117,14 +116,15 @@ For each resource type, we'll need the following (based on "Adding Resource Type
 
 ### Misc Data API Work ###
 
+* Add proper messages about build requests and buildsets to the build request distributor
+  * claiming build requests
+  * unclaiming build requests
+  * completing build requests
+  * completing buildsets
 * Make sure that the arguments to `addChange` are flexible and compatible: http://trac.buildbot.net/ticket/2378 :runner:
 * addBuildset should take a list of builder IDs, rather than names :runner:
 * REST stuff:
-  * Support paging, filtering, and so on of data API results. :runner:
   * Create links with relations (`rel=..`). :runner:
-  * Assign `urn`s to objects, and use those to correlate messages with objects. :runner:
-* Parsing of endpoint options is currently left to the endpoint, which will lead to inconsistencies.
-  Add and document some helper methods to ``base.Endpoint`` for parsing e.g., boolean options (supporting on/off, 0/1, true/false, etc.)
 * If several rtypes have `_db2data` functions or similar (so far masters and changes both do), then make that an idiom and document it.
 * Move the methods of BuilderControl to update methods of the Builder resouce type (or other places as appropriate), and add control methods where appropriate.
   In particular, implement `rebuildBuild` properly.
@@ -145,15 +145,12 @@ For each resource type, we'll need the following (based on "Adding Resource Type
 * Rewrite all message and endpoint names in the Data API documentation to use ``{var}`` instead of ``$var`` :runner:
 * Check that all Data API update methods have fake implementations, and that those fake implementations have the same signature as the real implementation.
 * Steps' URLs should be stored as JSON objects giving both a title and a URL. :runner:
+* Validate messages using the same system as used to validate resource types
 
 ## Status Rewrites ##
 
 The following will need to be rewritten:
 
-### MailNotifier ###
-
-
-### Others ###
 * IRC (words.py) :runner:
 * StatusClient (maybe)
 * WebStatus (already in progress with buildbot-www)
@@ -194,11 +191,13 @@ Testing javascript and json api interaction is tricky. Few design principles:
 
 ### REST API ###
 
-* Support paging, filtering, and so on of data API results.
-  (Use TastyPie's URL parameters as a model) :runner:
 * Use plurals in path elements (/changes/NNN rather than /change/NNN) :runner:
 * Return dates as strings :runner:
 * Add cache headers to the HTTP server, based on information encoded in the resource types regarding immutability and speed of change. :runner:
+
+### Documentation ###
+
+* Document writing plugins, and create an example plugin project on GitHub.
 
 ### Localization ###
 

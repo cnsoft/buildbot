@@ -20,6 +20,7 @@ import jinja2
 from zope.interface import Interface
 from twisted.internet import defer
 from twisted.web import resource, static, server
+from twisted.web.util import redirectTo
 from twisted.python import log
 from buildbot.status import builder, buildstep, build
 from buildbot.status.results import SUCCESS, WARNINGS, FAILURE, SKIPPED
@@ -109,16 +110,16 @@ def build_get_class(b):
     return builder.Results[result]
 
 def path_to_root(request):
-    # /waterfall : ['waterfall'] -> ''
+    # /waterfall : ['waterfall'] -> '/'
     # /somewhere/lower : ['somewhere', 'lower'] -> '../'
     # /somewhere/indexy/ : ['somewhere', 'indexy', ''] -> '../../'
-    # / : [] -> ''
+    # / : [] -> '/'
     if request.prepath:
         segs = len(request.prepath) - 1
     else:
         segs = 0
     root = "../" * segs
-    return root
+    return root if len(root) > 0 else "/"
 
 def path_to_authfail(request):
     return path_to_root(request) + "authfail"
@@ -147,6 +148,15 @@ def path_to_slave(request, slave):
 def path_to_change(request, change):
     return (path_to_root(request) +
             "changes/%s" % change.number)
+
+def path_always_viewable(request):
+    """
+    Tests whether an endpoint is viewable irrespective of authz settings.
+    If these paths were not accessible by all then the site would fail to
+    function, so authz should be ignored.
+    """
+    return request.path == "/" or request.path == "/login"
+
 
 class Box:
     # a Box wraps an Event. The Box has HTML <td> parameters that Events
@@ -236,7 +246,17 @@ class ActionResource(resource.Resource, AccessorMixin):
         """
 
     def render(self, request):
-        d = defer.maybeDeferred(lambda : self.performAction(request))
+        d = defer.maybeDeferred(self.getAuthz(request).actionAllowed,
+                                'view',
+                                request)
+
+        def view(allowed):
+            if allowed or path_always_viewable(request):
+                return defer.maybeDeferred(lambda: self.performAction(request))
+            else:
+                return path_to_root(request)
+        d.addCallback(view)
+
         def redirect(url):
             if isinstance(url, tuple):
                 url, alert_msg = url
@@ -286,7 +306,6 @@ class HtmlResource(resource.Resource, ContextMixin):
             "empty.html")
         return template.render(**context)
 
-
     def render(self, request):
         # tell the WebStatus about the HTTPChannel that got opened, so they
         # can close it if we get reconfigured and the WebStatus goes away.
@@ -323,7 +342,17 @@ class HtmlResource(resource.Resource, ContextMixin):
 
         ctx = self.getContext(request)
 
-        d = defer.maybeDeferred(lambda : self.content(request, ctx))
+        d = defer.maybeDeferred(self.getAuthz(request).actionAllowed,
+                                'view',
+                                request)
+
+        def view(allowed):
+            if allowed or path_always_viewable(request):
+                return defer.maybeDeferred(lambda: self.content(request, ctx))
+            else:
+                return redirectTo(path_to_root(request), request)
+        d.addCallback(view)
+
         def handle(data):
             if isinstance(data, unicode):
                 data = data.encode("utf-8")
@@ -333,6 +362,7 @@ class HtmlResource(resource.Resource, ContextMixin):
                 return ''
             return data
         d.addCallback(handle)
+
         def ok(data):
             request.write(data)
             try:
@@ -425,6 +455,58 @@ def abbreviate_age(age):
 class BuildLineMixin:
     LINE_TIME_FORMAT = "%b %d %H:%M"
 
+    def get_rev_list(self, build):
+        ss_list = build.getSourceStamps()
+        all_got_revision = build.getAllGotRevisions() or {}
+
+        if not ss_list:
+            return [{
+                'repo': 'unknown, no information in build', 
+                'codebase': '',
+                'rev': 'unknown'
+            }]
+        
+        if len(ss_list)==1:
+            return [{
+                'repo': ss_list[0].repository,
+                'codebase': ss_list[0].codebase,
+                'rev': all_got_revision.get(ss_list[0].codebase, "??")
+            }]
+
+        # multiple-codebase configuration
+        rev_list = []
+        for ss in ss_list:
+            # skip codebases with no sourcestamp spec
+            if not ss.branch and not ss.revision and not ss.patch and not ss.changes:
+                continue
+
+            rev = {
+                'repo': ss.repository,
+                'codebase': ss.codebase
+            }
+
+            # show the most descriptive thing we can
+            if ss.branch:
+                rev['rev'] = ss.branch
+            elif ss.codebase in all_got_revision:
+                rev['rev'] = all_got_revision[ss.codebase]
+            elif ss.revision:
+                rev['rev'] = ss.revision
+            else:
+                rev['rev'] = '??'
+
+            rev_list.append(rev)
+
+        # if all sourcestamps were empty, then this is a "most recent" kind of build
+        if not rev_list:
+            rev_list = [{
+                'repo': 'unknown, no information in build', 
+                'codebase': '',
+                'rev': 'most recent'
+            }]
+
+        return rev_list
+
     def get_line_values(self, req, build, include_builder=True):
         '''
         Collect the data needed for each line display
@@ -432,23 +514,11 @@ class BuildLineMixin:
         builder_name = build.getBuilder().getName()
         results = build.getResults()
         text = build.getText()
-        all_got_revision = build.getAllGotRevisions()
         css_class = css_classes.get(results, "")
-        ss_list = build.getSourceStamps()
-        if ss_list:
-            repo = ss_list[0].repository
-            if all_got_revision:
-                if len(ss_list) == 1:
-                    rev = all_got_revision.get(ss_list[0].codebase, "??")
-                else:
-                    rev = "multiple rev."
-            else:
-                rev = "??"
-        else:
-            repo = 'unknown, no information in build'
-            rev = 'unknown'
+        
+        rev_list = self.get_rev_list(build)
 
-        if type(text) == list:
+        if isinstance(text, list):
             text = " ".join(text)
 
         values = {'class': css_class,
@@ -458,8 +528,8 @@ class BuildLineMixin:
                   'text': " ".join(build.getText()),
                   'buildurl': path_to_build(req, build),
                   'builderurl': path_to_builder(req, build.getBuilder()),
-                  'rev': rev,
-                  'rev_repo' : repo,
+                  'rev_list': rev_list,
+                  'multiple_revs': (len(rev_list) > 1),
                   'time': time.strftime(self.LINE_TIME_FORMAT,
                                         time.localtime(build.getTimes()[0])),
                   'text': text,

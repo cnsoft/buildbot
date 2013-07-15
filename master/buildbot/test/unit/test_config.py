@@ -51,11 +51,13 @@ global_defaults = dict(
     multiMaster=False,
     debugPassword=None,
     manhole=None,
-    www=dict(port=None, url='http://localhost:8080/'),
+    www=dict(port=None, url='http://localhost:8080/', plugins={}),
 )
 
 
 class FakeChangeSource(changes_base.ChangeSource):
+    def __init__(self):
+        return changes_base.ChangeSource.__init__(self, name='FakeChangeSource')
     pass
 
 
@@ -120,7 +122,7 @@ class MasterConfig(ConfigErrorsMixin, dirs.DirsMixin, unittest.TestCase):
 
     def setUp(self):
         self.basedir = os.path.abspath('basedir')
-        self.filename = 'test.cfg'
+        self.filename = os.path.join(self.basedir, 'test.cfg')
         return self.setUpDirs('basedir')
 
     def tearDown(self):
@@ -602,11 +604,22 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
                 dict(caches=dict(foo=1)))
         self.assertResults(caches=dict(Changes=10, Builds=15, foo=1))
 
-    def test_load_caches_entries_test(self):
+    def test_load_caches_not_int_err(self):
+        """
+        Test that non-integer cache sizes are not allowed.
+        """
         self.cfg.load_caches(self.filename,
                 dict(caches=dict(foo="1")))
         self.assertConfigError(self.errors,
                                "value for cache size 'foo' must be an integer")
+
+    def test_load_caches_to_small_err(self):
+        """
+        Test that cache sizes less then 1 are not allowed.
+        """
+        self.cfg.load_caches(self.filename, dict(caches=dict(Changes=-12)))
+        self.assertConfigError(self.errors,
+                        "'Changes' cache size must be at least 1, got '-12'")
 
     def test_load_schedulers_defaults(self):
         self.cfg.load_schedulers(self.filename, {})
@@ -753,17 +766,32 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
 
     def test_load_www_default(self):
         self.cfg.load_www(self.filename, {})
-        self.assertResults(www=dict(port=None, url='http://localhost:8080/'))
+        self.assertResults(www=dict(port=None, url='http://localhost:8080/',
+                                    plugins={}))
 
     def test_load_www_port(self):
         self.cfg.load_www(self.filename,
                 dict(www=dict(port=9888)))
-        self.assertResults(www=dict(port=9888, url='http://localhost:9888/'))
+        self.assertResults(www=dict(port=9888, url='http://localhost:9888/',
+                                    plugins={}))
+
+    def test_load_www_plugin(self):
+        self.cfg.load_www(self.filename,
+                dict(www=dict(plugins={'waterfall': {'foo':'bar'}})))
+        self.assertResults(www=dict(port=None, url='http://localhost:8080/',
+                                    plugins={'waterfall':{'foo':'bar'}}))
 
     def test_load_www_url_no_slash(self):
         self.cfg.load_www(self.filename,
                 dict(www=dict(url='http://foo', port=20)))
-        self.assertResults(www=dict(port=20, url='http://foo/'))
+        self.assertResults(www=dict(port=20, url='http://foo/',
+                                    plugins={}))
+
+    def test_load_www_unknown(self):
+        self.cfg.load_www(self.filename,
+                dict(www=dict(foo="bar")))
+        self.assertConfigError(self.errors,
+            "unknown www configuration parameter(s) foo")
 
 
 class MasterConfig_checkers(ConfigErrorsMixin, unittest.TestCase):
@@ -821,7 +849,7 @@ class MasterConfig_checkers(ConfigErrorsMixin, unittest.TestCase):
             l.name = name
             if bare_builder_lock:
                 return l
-            return locks.LockAccess(l, "counting")
+            return locks.LockAccess(l, "counting", _skipChecks=True)
 
         b1, b2 = bldr('b1'), bldr('b2')
         self.cfg.builders = [ b1, b2 ]
@@ -864,6 +892,13 @@ class MasterConfig_checkers(ConfigErrorsMixin, unittest.TestCase):
 
         self.cfg.check_schedulers()
         self.assertConfigError(self.errors, "Unknown builder 'b2'")
+
+    def test_check_schedulers_ignored_in_multiMaster(self):
+        self.setup_basic_attrs()
+        del self.cfg.builders[1] # remove b2, leaving b1
+        self.cfg.multiMaster = True
+        self.cfg.check_schedulers()
+        self.assertNoConfigErrors(self.errors)
 
     def test_check_schedulers(self):
         self.setup_basic_attrs()

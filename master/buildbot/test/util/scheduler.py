@@ -14,6 +14,7 @@
 # Copyright Buildbot Team Members
 
 from twisted.internet import defer
+from buildbot.schedulers import base
 from buildbot.test.fake import fakemaster, fakedb
 from buildbot.test.util import interfaces
 
@@ -33,6 +34,8 @@ class SchedulerMixin(interfaces.InterfaceTests):
     @ivar master: the fake master
     @ivar db: the fake db (same as C{self.master.db}, but shorter)
     """
+
+    OTHER_MASTER_ID = 93
 
     def setUpScheduler(self):
         pass
@@ -100,8 +103,39 @@ class SchedulerMixin(interfaces.InterfaceTests):
                 return defer.succeed(400 + len(self.addedSourceStampSets) - 1)
             self.db.sourcestamps.addSourceStampSet = fake_addSourceStampSet
 
+        # patch methods to detect a failure to upcall the activate and
+        # deactivate methods .. unless we're testing BaseScheduler
+        def patch(meth):
+            oldMethod = getattr(scheduler, meth)
+            def newMethod():
+                self._parentMethodCalled = False
+                d = defer.maybeDeferred(oldMethod)
+                @d.addCallback
+                def check(rv):
+                    self.assertTrue(self._parentMethodCalled,
+                        "'%s' did not call its parent" % meth)
+                    return rv
+                return d
+            setattr(scheduler, meth, newMethod)
+
+            oldParent = getattr(base.BaseScheduler, meth)
+            def newParent(self_):
+                self._parentMethodCalled = True
+                return oldParent(self_)
+            self.patch(base.BaseScheduler, meth, newParent)
+        if scheduler.__class__ != base.BaseScheduler:
+            patch('activate')
+            patch('deactivate')
+
         self.sched = scheduler
         return scheduler
+
+    def setSchedulerToMaster(self, otherMaster):
+        self.master.data.updates.schedulerIds[self.sched.name] = self.sched.objectid
+        if otherMaster:
+            self.master.data.updates.schedulerMasters[self.sched.objectid] = otherMaster
+        else:
+            del self.master.data.updates.schedulerMasters[self.sched.objectid]
 
     class FakeChange:
         who = ''
@@ -145,7 +179,7 @@ class SchedulerMixin(interfaces.InterfaceTests):
 
     def fake_addBuildsetForChanges(self, reason='', external_idstring=None,
             changeids=[], builderNames=None, properties=None):
-        properties = properties.asDict()
+        properties = properties.asDict() if properties is not None else None
         self.addBuildsetCalls.append(('addBuildsetForChanges', locals()))
         self.addBuildsetCalls[-1][1].pop('self')
         return self._addBuildsetReturnValue(builderNames)

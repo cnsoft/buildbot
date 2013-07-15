@@ -188,16 +188,35 @@ class MercurialExtractor(SourceStampExtractor):
     patchlevel = 1
     vcexe = "hg"
 
+    def _didvc(self, res, cmd):
+        (stdout, stderr, code) = res
+
+        if code:
+            cs = ' '.join(['hg'] + cmd)
+            if stderr:
+                stderr = '\n' + stderr.rstrip()
+            raise RuntimeError("%s returned %d%s" % (cs, code, stderr))
+
+        return stdout
+
+    @defer.inlineCallbacks
     def getBaseRevision(self):
         upstream = ""
         if self.repository:
             upstream = "r'%s'" % self.repository
-        d = self.dovc(["log", "--template", "{node}\\n", "-r", "limit(parents(outgoing(%s) and branch(parents())) or parents(), 1)" % upstream])
-        d.addCallback(self.parseStatus)
-        return d
-
-    def parseStatus(self, output):
+        output = ''
+        try:
+            output = yield self.dovc(["log", "--template", "{node}\\n", "-r",
+                                      "max(::. - outgoing(%s))" % upstream])
+        except RuntimeError:
+            # outgoing() will abort if no default-push/default path is configured
+            if upstream:
+                raise
+            # fall back to current working directory parent
+            output = yield self.dovc(["log", "--template", "{node}\\n", "-r", "p1()"])
         m = re.search(r'^(\w+)', output)
+        if not m:
+            raise RuntimeError("Revision %r is not in the right format" % (output,))
         self.baserev = m.group(0)
 
     def getPatch(self, res):
@@ -612,8 +631,12 @@ class Try(pb.Referenceable):
             tryuser = self.getopt("username")
             trydir = self.getopt("jobdir")
             buildbotbin = self.getopt("buildbotbin")
-            argv = ["ssh", "-l", tryuser, tryhost,
-                    buildbotbin, "tryserver", "--jobdir", trydir]
+            if tryuser:
+                argv = ["ssh", "-l", tryuser, tryhost,
+                        buildbotbin, "tryserver", "--jobdir", trydir]
+            else:
+                argv = ["ssh", tryhost,
+                        buildbotbin, "tryserver", "--jobdir", trydir]
             pp = RemoteTryPP(self.jobfile)
             reactor.spawnProcess(pp, argv[0], argv, os.environ)
             d = pp.d
@@ -849,7 +872,13 @@ class Try(pb.Referenceable):
             "unknown connecttype '%s', should be 'pb'" % self.connect)
 
     def _getBuilderNames(self, remote, output):
-        d = remote.callRemote("getAvailableBuilderNames")
+        # Older schedulers won't support the properties argument, so only
+        # attempt to send them when necessary.
+        properties = self.config.get('properties', {})
+        if properties:
+            d = remote.callRemote("getAvailableBuilderNames", properties)
+        else:
+            d = remote.callRemote("getAvailableBuilderNames")
         d.addCallback(self._getBuilderNames2)
         return d
 

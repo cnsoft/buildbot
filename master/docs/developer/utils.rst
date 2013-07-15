@@ -44,6 +44,11 @@ package.
             compare_attrs = base.BaseScheduler.compare_attrs + ('arg1', 'arg2')
 
 
+    A point to note is that the compare_attrs list is cumulative; that is,
+    when a subclass also has a compare_attrs and the parent class has a
+    compare_attrs, the subclass' compare_attrs also includes the parent
+    class' compare_attrs.
+
 .. py:function:: safeTranslate(str)
 
     :param str: input string
@@ -138,6 +143,16 @@ package.
     This function is intended to implement automatic conversions for user convenience.
     If given a bytestring, it returns the string decoded as ASCII (and will thus fail for any bytes 0x80 or higher).
     If given a unicode string, it returns it directly.
+
+.. py:function:: string2boolean(str):
+
+    :param str: string
+    :raises KeyError:
+    :returns: boolean
+
+    This function converts a string to a boolean.
+    It is intended to be liberal in what it accepts: case-insensitive, "true", "on", "yes", "1", etc.
+    It raises :py:exc:`KeyError` if the value is not recognized.
 
 .. py:data:: NotABranch
 

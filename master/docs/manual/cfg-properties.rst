@@ -115,16 +115,6 @@ Source Stamp Attributes
 
     This attribute is a list of dictionaries reperesnting the changes that make up this sourcestamp.
 
-``has_patch``
-``patch_level``
-``patch_body``
-``patch_subdir``
-``patch_author``
-``patch_comment``
-
-    These attributes are set if the source stamp was created by a :ref:`try scheduler<Try-Schedulers>`.
-
-
 Using Properties in Steps
 -------------------------
 
@@ -181,7 +171,7 @@ The default value can reference other properties, e.g., ::
 
     command=Property('command', default=Property('default-command'))
 
-.. Index:: single; Properties; Interpolate
+.. index:: single: Properties; Interpolate
 
 .. _Interpolate:
 
@@ -254,19 +244,21 @@ Example ::
 
    from buildbot.steps.shell import ShellCommand
    from buildbot.process.properties import Interpolate
-   f.addStep(ShellCommand(command=[ 'make', Interpolate('REVISION=%(prop:got_revision:-%(src::revision:-unknown)s)s')
+   f.addStep(ShellCommand(command=[ 'make', Interpolate('REVISION=%(prop:got_revision:-%(src::revision:-unknown)s)s'),
                                     'dist' ]))
 
 In addition, ``Interpolate`` supports using positional string interpolation.
 Here, ``%s`` is used as a placeholder, and the substitutions (which may themselves be placeholders), are given as subsequent arguments::
 
-.. note:
+  TODO
+
+.. note::
 
   Like Python, you can use either positional interpolation *or*
   dictionary-style interpolation, not both.  Thus you cannot use a string
   like ``Interpolate("foo-%(src::revision)s-%s", "branch")``.
 
-.. index:: single; Properties; Renderer
+.. index:: single: Properties; Renderer
 
 .. _Renderer:
 
@@ -287,13 +279,26 @@ The function receives an :class:`~buildbot.interfaces.IProperties` object, which
             command += [ '-j', '2' ]
         command += [ 'all' ]
         return command
-   f.addStep(ShellCommand(command=makeCommand))
+    f.addStep(ShellCommand(command=makeCommand))
 
 You can think of ``renderer`` as saying "call this function when the step starts".
 
-.. index:: single; Properties; WithProperties
+.. index:: single: Properties; WithProperties
 
 .. _WithProperties:
+
+FlattenList
++++++++++++
+
+If nested list should be flatten for some renderables, FlattenList could be used.
+For example::
+
+   f.addStep(ShellCommand(command=[ 'make' ], descriptionDone=FlattenList([ 'make ', [ 'done' ]])))
+
+``descriptionDone`` would be set to ``[ 'make', 'done' ]`` when the ``ShellCommand`` executes.
+This is useful when a list-returning property is used in renderables.
+
+.. note:: ShellCommand automatically flattens nested lists in its ``command`` argument, so there is no need to use ``FlattenList`` for it.
 
 WithProperties
 ++++++++++++++
@@ -375,7 +380,7 @@ For example::
 
     class DetermineFoo(object):
         implements(IRenderable)
-        def getRenderingFor(self, props)
+        def getRenderingFor(self, props):
             if props.hasProperty('bar'):
                 return props['bar']
             elif props.hasProperty('baz'):
@@ -387,7 +392,7 @@ or, more practically, ::
 
     class Now(object):
         implements(IRenderable)
-        def getRenderingFor(self, props)
+        def getRenderingFor(self, props):
             return time.clock()
     ShellCommand(command=['make', Interpolate('TIME=%(kw:now)', now=Now())])
 

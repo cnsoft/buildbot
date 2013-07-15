@@ -67,6 +67,15 @@ class BaseScheduler(scheduler.SchedulerMixin, unittest.TestCase):
         self.assertRaises(config.ConfigErrors,
                             lambda : self.makeScheduler(codebases = codebases))
 
+    def test_getCodebaseDict(self):
+        sched = self.makeScheduler(codebases={'lib': {'repository': 'librepo'}})
+        self.assertEqual(sched.getCodebaseDict('lib'),
+                {'repository': 'librepo'})
+
+    def test_getCodebaseDict_not_found(self):
+        sched = self.makeScheduler(codebases={'lib': {'repository': 'librepo'}})
+        self.assertRaises(KeyError, lambda : sched.getCodebaseDict('app'))
+
     def test_listBuilderNames(self):
         sched = self.makeScheduler(builderNames=['x', 'y'])
         self.assertEqual(sched.listBuilderNames(), ['x', 'y'])
@@ -183,32 +192,43 @@ class BaseScheduler(scheduler.SchedulerMixin, unittest.TestCase):
         sched.deactivate = mock.Mock(return_value=defer.succeed(None))
 
         # set the schedulerid, and claim the scheduler on another master
-        self.master.data.updates.schedulerIds['n'] = 20
-        self.master.data.updates.schedulerMasters[20] = 93
+        self.setSchedulerToMaster(self.OTHER_MASTER_ID)
 
         sched.startService()
-        sched.clock.advance(sched.POLL_INTERVAL/2)
-        sched.clock.advance(sched.POLL_INTERVAL/5)
-        sched.clock.advance(sched.POLL_INTERVAL/5)
+        sched.clock.advance(sched.POLL_INTERVAL_SEC/2)
+        sched.clock.advance(sched.POLL_INTERVAL_SEC/5)
+        sched.clock.advance(sched.POLL_INTERVAL_SEC/5)
         self.assertFalse(sched.activate.called)
         self.assertFalse(sched.deactivate.called)
-        self.assertFalse(sched.active)
+        self.assertFalse(sched.isActive())
+        self.assertEqual(sched.serviceid, sched.objectid)  # objectid is attached by the test helper
 
         # clear that masterid
-        del self.master.data.updates.schedulerMasters[20]
-        sched.clock.advance(sched.POLL_INTERVAL)
+        self.setSchedulerToMaster(None)
+        sched.clock.advance(sched.POLL_INTERVAL_SEC)
         self.assertTrue(sched.activate.called)
         self.assertFalse(sched.deactivate.called)
-        self.assertTrue(sched.active)
+        self.assertTrue(sched.isActive())
 
         # stop the service and see that deactivate is called
         yield sched.stopService()
         self.assertTrue(sched.activate.called)
         self.assertTrue(sched.deactivate.called)
-        self.assertFalse(sched.active)
+        self.assertFalse(sched.isActive())
 
     @compat.usesFlushLoggedErrors
-    @defer.inlineCallbacks
+    def test_activation_claim_raises(self):
+        sched = self.makeScheduler(name='n', builderNames=['a'])
+        sched.clock = task.Clock()
+
+        # set the schedulerid, and claim the scheduler on another master
+        self.setSchedulerToMaster(RuntimeError())
+
+        sched.startService()
+        self.assertEqual(1, len(self.flushLoggedErrors(RuntimeError)))
+        self.assertFalse(sched.isActive())
+
+    @compat.usesFlushLoggedErrors
     def test_activation_activate_fails(self):
         sched = self.makeScheduler(name='n', builderNames=['a'])
         sched.clock = task.Clock()
@@ -218,8 +238,6 @@ class BaseScheduler(scheduler.SchedulerMixin, unittest.TestCase):
         sched.activate = activate
 
         sched.startService()
-        sched.clock.advance(sched.POLL_INTERVAL/2)
-        yield sched.stopService()
         self.assertEqual(1, len(self.flushLoggedErrors(RuntimeError)))
 
     @defer.inlineCallbacks

@@ -17,7 +17,7 @@ from buildbot.util import json
 import types
 from twisted.internet import defer
 from twisted.python import failure
-from buildbot.data import connector, exceptions
+from buildbot.data import connector
 from buildbot.test.util import validation
 
 class FakeUpdates(object):
@@ -31,12 +31,15 @@ class FakeUpdates(object):
 
         # test cases should assert the values here:
         self.changesAdded = [] # Changes are numbered starting at 1.
+        self.changesourceIds = {}  # { name : id }; users can add changesources here
         self.buildsetsAdded = [] # Buildsets are numbered starting at 1
         self.maybeBuildsetCompleteCalls = 0
         self.masterStateChanges = [] # dictionaries
         self.schedulerIds = {} # { name : id }; users can add schedulers here
         self.builderIds = {} # { name : id }; users can add schedulers here
         self.schedulerMasters = {} # { schedulerid : masterid }
+        self.changesourceMasters = {} # { changesourceid : masterid }
+        self.buildslaveIds = {} # { name : id }; users can add buildslaves here
 
     ## extra assertions
 
@@ -110,8 +113,9 @@ class FakeUpdates(object):
         self.testcase.assertIsInstance(scheduler, unicode)
         self.testcase.assertIsInstance(sourcestamps, list)
         for ss in sourcestamps:
-            if not isinstance(ss, int) or isinstance(ss, dict):
-                self.fail("%s is not an integer or a dictionary")
+            if not isinstance(ss, int) and not isinstance(ss, dict):
+                self.testcase.fail("%s (%s) is not an integer or a dictionary"
+                                        % (ss, type(ss)))
         del ss # since we use locals(), below
         self.testcase.assertIsInstance(reason, unicode)
         self.assertProperties(sourced=True, properties=properties)
@@ -151,6 +155,13 @@ class FakeUpdates(object):
             self.schedulerIds[name] = max([0] + self.schedulerIds.values()) + 1
         return defer.succeed(self.schedulerIds[name])
 
+    def findChangeSourceId(self, name):
+        validation.verifyType(self.testcase, 'changesource name', name,
+                validation.StringValidator())
+        if name not in self.changesourceIds:
+            self.changesourceIds[name] = max([0] + self.changesourceIds.values()) + 1
+        return defer.succeed(self.changesourceIds[name])
+
     def findBuilderId(self, name):
         validation.verifyType(self.testcase, 'builder name', name,
                 validation.StringValidator())
@@ -158,19 +169,32 @@ class FakeUpdates(object):
             self.builderIds[name] = max([0] + self.builderIds.values()) + 1
         return defer.succeed(self.builderIds[name])
 
-    def setSchedulerMaster(self, schedulerid, masterid):
+    def trySetSchedulerMaster(self, schedulerid, masterid):
         currentMasterid = self.schedulerMasters.get(schedulerid)
-        if currentMasterid and masterid is not None:
+        if isinstance(currentMasterid, Exception):
             return defer.fail(failure.Failure(
-                exceptions.SchedulerAlreadyClaimedError()))
+                currentMasterid))
+        if currentMasterid and masterid is not None:
+            return defer.succeed(False)
         self.schedulerMasters[schedulerid] = masterid
+        return defer.succeed(True)
 
-    def newBuild(self, builderid, buildrequestid, slaveid):
+    def trySetChangeSourceMaster(self, changesourceid, masterid):
+        currentMasterid = self.changesourceMasters.get(changesourceid)
+        if isinstance(currentMasterid, Exception):
+            return defer.fail(failure.Failure(
+                currentMasterid))
+        if currentMasterid and masterid is not None:
+            return defer.succeed(False)
+        self.changesourceMasters[changesourceid] = masterid
+        return defer.succeed(True)
+
+    def newBuild(self, builderid, buildrequestid, buildslaveid):
         validation.verifyType(self.testcase, 'builderid', builderid,
                 validation.IntValidator())
         validation.verifyType(self.testcase, 'buildrequestid', buildrequestid,
                 validation.IntValidator())
-        validation.verifyType(self.testcase, 'slaveid', slaveid,
+        validation.verifyType(self.testcase, 'buildslaveid', buildslaveid,
                 validation.IntValidator())
         return defer.succeed((10, 1))
 
@@ -236,6 +260,24 @@ class FakeUpdates(object):
         self.testcase.assertEqual(content[-1], u'\n')
         return defer.succeed(None)
 
+    def findBuildslaveId(self, name):
+        validation.verifyType(self.testcase, 'buildslave name', name,
+                validation.IdentifierValidator(50))
+        # this needs to actually get inserted into the db (fake or real) since
+        # getBuildslave will get called later
+        return self.master.db.buildslaves.findBuildslaveId(name)
+
+    def buildslaveConnected(self, buildslaveid, masterid, slaveinfo):
+        return self.master.db.buildslaves.buildslaveConnected(
+                buildslaveid=buildslaveid,
+                masterid=masterid,
+                slaveinfo=slaveinfo)
+
+    def buildslaveDisconnected(self, buildslaveid, masterid):
+        return self.master.db.buildslaves.buildslaveDisconnected(
+                buildslaveid=buildslaveid,
+                masterid=masterid)
+
 
 class FakeDataConnector(object) :
     # FakeDataConnector delegates to the real DataConnector so it can get all
@@ -251,10 +293,20 @@ class FakeDataConnector(object) :
         self.realConnector = connector.DataConnector(master)
         self.rtypes = self.realConnector.rtypes
 
-    def get(self, options, path):
+    def _scanModule(self, mod):
+        return self.realConnector._scanModule(mod)
+
+    def getEndpoint(self, path):
         if not isinstance(path, tuple):
             raise TypeError('path must be a tuple')
-        return self.realConnector.get(options, path)
+        return self.realConnector.getEndpoint(path)
+
+    def get(self, path, filters=None, fields=None,
+                        order=None, limit=None, offset=None):
+        if not isinstance(path, tuple):
+            raise TypeError('path must be a tuple')
+        return self.realConnector.get(path, filters=filters, fields=fields,
+                order=order, limit=limit, offset=offset)
 
     def startConsuming(self, callback, options, path):
         if not isinstance(path, tuple):

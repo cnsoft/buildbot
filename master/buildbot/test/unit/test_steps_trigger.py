@@ -92,13 +92,12 @@ class TestTrigger(steps.BuildStepMixin, unittest.TestCase):
         a.brids = {'A': 11}
         b.brids = {'B': 22}
 
-        make_fake_br = lambda brid, name: fakedb.BuildRequest(id=brid,
-                                                              buildsetid=BRID_TO_BSID(brid),
-                                                              buildername=name)
-        make_fake_build = lambda brid: fakedb.Build(buildrequestid=brid,
-                                                    id=BRID_TO_BID(brid),
-                                                    number=BRID_TO_BUILD_NUMBER(brid),
-                                                    masterid=9)
+        make_fake_br = lambda brid, name: fakedb.BuildRequest(
+                id=brid, buildsetid=BRID_TO_BSID(brid), buildername=name)
+        make_fake_build = lambda brid: fakedb.Build(
+                buildrequestid=brid, id=BRID_TO_BID(brid),
+                number=BRID_TO_BUILD_NUMBER(brid), masterid=9,
+                buildslaveid=13)
 
         m.db.insertTestData([
             fakedb.Master(id=9),
@@ -443,7 +442,7 @@ class TestTrigger(steps.BuildStepMixin, unittest.TestCase):
         self.expectTriggeredWith(
             a=([], {}),
             b=([], {}))
-        self.expectTriggeredLinks('a') # b doesnt return a brid
+        self.expectTriggeredLinks('a') # b doesn't return a brid
         d = self.runStep(expect_waitForFinish=True)
         def flush(_):
             self.assertEqual(len(self.flushLoggedErrors(RuntimeError)), 1)

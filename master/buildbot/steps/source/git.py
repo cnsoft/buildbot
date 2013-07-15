@@ -16,7 +16,7 @@
 from twisted.python import log
 from twisted.internet import defer
 
-from buildbot import config
+from buildbot import config as bbconfig
 from buildbot.process import buildstep
 from buildbot.steps.source.base import Source
 from buildbot.interfaces import BuildSlaveTooOldError
@@ -57,12 +57,11 @@ git_describe_flags = [
 class Git(Source):
     """ Class for Git with all the smarts """
     name='git'
-    renderables = [ "repourl"]
+    renderables = [ "repourl", "reference"]
 
-    def __init__(self, repourl=None, branch='HEAD', mode='incremental',
-                 method=None, submodules=False, shallow=False, progress=False,
-                 retryFetch=False, clobberOnFailure=False, getDescription=False,
-                 **kwargs):
+    def __init__(self, repourl=None, branch='HEAD', mode='incremental', method=None,
+                 reference=None, submodules=False, shallow=False, progress=False, retryFetch=False,
+                 clobberOnFailure=False, getDescription=False, config=None, **kwargs):
         """
         @type  repourl: string
         @param repourl: the URL which points at the git repository
@@ -83,10 +82,14 @@ class Git(Source):
         @param method: Full builds can be done is different ways. This parameter
                        specifies which method to use.
 
+        @type reference: string
+        @param reference: If available use a reference repo.
+                          Uses `--reference` in git command. Refer `git clone --help`
         @type  progress: boolean
         @param progress: Pass the --progress option when fetching. This
                          can solve long fetches getting killed due to
                          lack of output, but requires Git 1.7.2+.
+
         @type  shallow: boolean
         @param shallow: Use a shallow or clone, if possible
 
@@ -95,6 +98,9 @@ class Git(Source):
         
         @type  getDescription: boolean or dict
         @param getDescription: Use 'git describe' to describe the fetched revision
+
+        @type  config: dict
+        @param config: Git configuration options to enable when running git
         """
         if not getDescription and not isinstance(getDescription, dict):
             getDescription = False
@@ -103,6 +109,7 @@ class Git(Source):
         self.method    = method
         self.prog  = progress
         self.repourl   = repourl
+        self.reference = reference
         self.retryFetch = retryFetch
         self.submodules = submodules
         self.shallow   = shallow
@@ -110,19 +117,20 @@ class Git(Source):
         self.clobberOnFailure = clobberOnFailure
         self.mode = mode
         self.getDescription = getDescription
+        self.config = config
         Source.__init__(self, **kwargs)
 
         if self.mode not in ['incremental', 'full']:
-            config.error("Git: mode must be 'incremental' or 'full'.")
+            bbconfig.error("Git: mode must be 'incremental' or 'full'.")
         if not self.repourl:
-            config.error("Git: must provide repourl.")
+            bbconfig.error("Git: must provide repourl.")
         if (self.mode == 'full' and
                 self.method not in ['clean', 'fresh', 'clobber', 'copy', None]):
-            config.error("Git: invalid method for mode 'full'.")
+            bbconfig.error("Git: invalid method for mode 'full'.")
         if self.shallow and (self.mode != 'full' or self.method != 'clobber'):
-            config.error("Git: shallow only possible with mode 'full' and method 'clobber'.")
+            bbconfig.error("Git: shallow only possible with mode 'full' and method 'clobber'.")
         if not isinstance(self.getDescription, (bool, dict)):
-            config.error("Git: getDescription must be a boolean or a dict.")
+            bbconfig.error("Git: getDescription must be a boolean or a dict.")
 
     def startVC(self, branch, revision, patch):
         self.branch = branch or 'HEAD'
@@ -292,7 +300,14 @@ class Git(Source):
         defer.returnValue(0)
 
     def _dovccmd(self, command, abandonOnFailure=True, collectStdout=False, initialStdin=None):
-        cmd = buildstep.RemoteShellCommand(self.workdir, ['git'] + command,
+        full_command = ['git']
+        if self.config is not None:
+            for name, value in self.config.iteritems():
+                full_command.append('-c')
+                full_command.append('%s=%s' % (name, value))
+        full_command.extend(command)
+        cmd = buildstep.RemoteShellCommand(self.workdir,
+                                           full_command,
                                            env=self.env,
                                            logEnviron=self.logEnviron,
                                            timeout=self.timeout,
@@ -370,9 +385,10 @@ class Git(Source):
             args += ['--branch', self.branch]
         if shallowClone:
             args += ['--depth', '1']
+        if self.reference:
+            args += ['--reference', self.reference]
         command = ['clone'] + args + [self.repourl, '.']
 
-        #Fix references
         if self.prog:
             command.append('--progress')
 
@@ -392,7 +408,7 @@ class Git(Source):
         return d
 
     def _fullCloneOrFallback(self):
-        """Wrapper for _fullClone(). In the case of failure, if clobberOnFailure 
+        """Wrapper for _fullClone(). In the case of failure, if clobberOnFailure
            is set to True remove the build directory and try a full clone again.
         """
 

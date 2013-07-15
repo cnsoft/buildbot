@@ -127,6 +127,7 @@ setup_args = {
               "buildbot.status", "buildbot.status.web","buildbot.status.web.hooks",
               "buildbot.www",
               "buildbot.changes",
+              "buildbot.buildslave",
               "buildbot.steps",
               "buildbot.steps.package",
               "buildbot.steps.package.deb",
@@ -139,6 +140,7 @@ setup_args = {
               "buildbot.schedulers",
               "buildbot.scripts",
               "buildbot.db",
+              "buildbot.db.types",
               "buildbot.db.migrate.versions",
               "buildbot.mq",
               "buildbot.data",
@@ -169,6 +171,7 @@ setup_args = {
                     "buildbot/status/web/files/templates_readme.txt",
                     "buildbot/status/web/files/favicon.ico",
                 ]),
+                include("buildbot/status/web/files/", '*.png'),
                 include("buildbot/status/web/templates", '*.html'),
                 include("buildbot/status/web/templates", '*.xml'),
                 ("buildbot/scripts", [
@@ -200,12 +203,11 @@ else:
     setup_args['install_requires'] = [
         'twisted >= 9.0.0',
         'Jinja2 >= 2.1',
-        # sqlalchemy-0.8 betas show issues with sqlalchemy-0.7.2, so
-        # stick to 0.7.9
-        'sqlalchemy >= 0.6, <= 0.7.9',
+        # sqlalchemy-0.8 betas show issues with sqlalchemy-0.7.2, so stick to 0.7.10
+        'sqlalchemy >= 0.6, <= 0.7.10',
         # buildbot depends on sqlalchemy internals, and these are the tested
         # versions.
-        'sqlalchemy-migrate ==0.6.1, ==0.7.0, ==0.7.1, ==0.7.2',
+        'sqlalchemy-migrate ==0.7.0, ==0.7.1, ==0.7.2',
         'python-dateutil==1.5',
     ]
     setup_args['tests_require'] = [

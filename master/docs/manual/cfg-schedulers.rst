@@ -277,6 +277,12 @@ The arguments to this scheduler are:
     .. note:: ``None`` is a keyword, not a string, so write ``None``
        and not ``"None"``.
 
+``createAbsoluteSourceStamps``
+    This option only has effect when using multiple codebases. When ``True``, it
+    uses the last seen revision for each codebase that does not have a change.
+    When ``False``, the default value, codebases without changes will use the
+    revision from the ``codebases`` argument.
+
 
 Example::
 
@@ -834,7 +840,7 @@ Here is a fully-worked example::
     # on checkin, run tests
     checkin_factory = factory.BuildFactory()
     checkin_factory.addStep(shell.Test())
-    checkin_factory.addStep(trigger.Trigger(schedulerNames=['nightly'])
+    checkin_factory.addStep(trigger.Trigger(schedulerNames=['nightly']))
 
     # and every night, package the latest successful build
     nightly_factory = factory.BuildFactory()
@@ -1100,10 +1106,10 @@ ChoiceStringParameter
 This parameter type lets the user choose between several choices (e.g the list
 of branches you are supporting, or the test campaign to run).  If ``multiple``
 is false, then its result is a string - one of the choices.  If ``multiple`` is
-true, then the result is a list of strings from the choices.  
+true, then the result is a list of strings from the choices.
 
-Note that for some use cases, the choices need to be generated dynamically. This can 
-be done via subclassing and overiding the 'getChoices' member function. An example 
+Note that for some use cases, the choices need to be generated dynamically. This can
+be done via subclassing and overiding the 'getChoices' member function. An example
 of this is provided by the source for the :py:class:`InheritBuildParameter` class.
 
 Its arguments, in addition to the common options, are:
@@ -1133,7 +1139,6 @@ Example::
             choices = [ "test_builder1",
                         "test_builder2",
                         "test_builder3" ])
-        ])
 
         # .. and later base the schedulers to trigger off this property:
 
@@ -1209,15 +1214,16 @@ Example::
                 builds.append(builder+"/"+str(b.getNumber()))
         return builds
 
-        # ...
+    # ...
 
-            properties=[
-                InheritBuildParameter(
-                    name="inherit",
-                    label="promote a build for merge",
-                    compatible_builds=get_compatible_builds,
-                    required = True),
-                    ])
+    sched = Scheduler(...,
+        properties=[
+            InheritBuildParameter(
+                name="inherit",
+                label="promote a build for merge",
+                compatible_builds=get_compatible_builds,
+                required = True),
+                ])
 
 .. bb:sched:: BuildslaveChoiceParameter
 
@@ -1234,18 +1240,18 @@ Example::
     from buildbot.process.builder import enforceChosenSlave
 
     # schedulers:
-        ForceScheduler(
-          # ...
-          properties=[
+    ForceScheduler(
+        # ...
+        properties=[
             BuildslaveChoiceParameter(),
-          ]
-        )
+        ]
+    )
 
     # builders:
-        BuilderConfig(
-          # ...
-          canStartBuild=enforceChosenSlave,
-        )
+    BuilderConfig(
+        # ...
+        canStartBuild=enforceChosenSlave,
+    )
 
 AnyPropertyParameter
 ####################

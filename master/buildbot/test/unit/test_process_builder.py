@@ -100,10 +100,10 @@ class TestBuilderBuildCreation(BuilderMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def test_maybeStartBuild_builder_stopped(self):
         yield self.makeBuilder()
-        
+
         # this will cause an exception if maybeStartBuild tries to start
         self.bldr.slaves = None
-        
+
         # so we just hope this does not fail
         yield self.bldr.stopService()
         started = yield self.bldr.maybeStartBuild(None, [])
@@ -112,14 +112,20 @@ class TestBuilderBuildCreation(BuilderMixin, unittest.TestCase):
 
     # maybeStartBuild
 
+    def _makeMocks(self):
+        slave = mock.Mock()
+        slave.name = 'slave'
+        buildrequest = mock.Mock()
+        buildrequest.id = 10
+        buildrequests = [buildrequest]
+        return slave, buildrequests
+
     @defer.inlineCallbacks
     def test_maybeStartBuild(self):
         yield self.makeBuilder()
-        
-        slave = mock.Mock()
-        slave.name = 'slave'
-        buildrequests = [mock.Mock(id=10)]
-        
+
+        slave, buildrequests = self._makeMocks()
+
         started = yield self.bldr.maybeStartBuild(slave, buildrequests)
         self.assertEqual(started, True)
         self.assertBuildsStarted([('slave', [10])])
@@ -127,11 +133,9 @@ class TestBuilderBuildCreation(BuilderMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def test_maybeStartBuild_failsToStart(self):
         yield self.makeBuilder(startBuildsForSucceeds=False)
-        
-        slave = mock.Mock()
-        slave.name = 'slave'
-        buildrequests = [mock.Mock(id=10)]
-        
+
+        slave, buildrequests = self._makeMocks()
+
         started = yield self.bldr.maybeStartBuild(slave, buildrequests)
         self.assertEqual(started, False)
         self.assertBuildsStarted([('slave', [10])])
@@ -223,7 +227,7 @@ class TestBuilderBuildCreation(BuilderMixin, unittest.TestCase):
         # by default, it returns True
         startable = yield self.bldr.canStartBuild('slave', 100)
         self.assertEqual(startable, True)
-        
+
         startable = yield self.bldr.canStartBuild('slave', 101)
         self.assertEqual(startable, True)
 
@@ -233,11 +237,11 @@ class TestBuilderBuildCreation(BuilderMixin, unittest.TestCase):
             record.append((bldr, slave, breq))
             return (slave,breq)==('slave',100)
         self.bldr.config.canStartBuild = canStartBuild
-        
+
         startable = yield self.bldr.canStartBuild('slave', 100)
         self.assertEqual(startable, True)
         self.assertEqual(record, [(self.bldr, 'slave', 100)])
-        
+
         startable = yield self.bldr.canStartBuild('slave', 101)
         self.assertEqual(startable, False)
         self.assertEqual(record, [(self.bldr, 'slave', 100), (self.bldr, 'slave', 101)])
@@ -249,11 +253,11 @@ class TestBuilderBuildCreation(BuilderMixin, unittest.TestCase):
             return (slave,breq)==('slave',100)
             return defer.succeed((slave,breq)==('slave',100))
         self.bldr.config.canStartBuild = canStartBuild_deferred
-        
+
         startable = yield self.bldr.canStartBuild('slave', 100)
         self.assertEqual(startable, True)
         self.assertEqual(record, [(self.bldr, 'slave', 100)])
-        
+
         startable = yield self.bldr.canStartBuild('slave', 101)
         self.assertEqual(startable, False)
         self.assertEqual(record, [(self.bldr, 'slave', 100), (self.bldr, 'slave', 101)])
@@ -290,6 +294,19 @@ class TestBuilderBuildCreation(BuilderMixin, unittest.TestCase):
         result = yield self.bldr.canStartBuild(slave, breq)
         self.assertIdentical(True, result)
 
+
+class TestGetBuilderId(BuilderMixin, unittest.TestCase):
+
+    @defer.inlineCallbacks
+    def test_getBuilderId(self):
+        yield self.makeBuilder(name='b1')
+        fbi = self.master.data.updates.findBuilderId = mock.Mock(name='fbi')
+        fbi.side_effect = lambda name : defer.succeed(13)
+        # call twice..
+        self.assertEqual((yield self.bldr.getBuilderId()), 13)
+        self.assertEqual((yield self.bldr.getBuilderId()), 13)
+        # and see that fbi was only called once
+        fbi.assert_called_once_with('b1')
 
 class TestGetOldestRequestTime(BuilderMixin, unittest.TestCase):
 

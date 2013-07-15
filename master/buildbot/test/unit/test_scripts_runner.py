@@ -21,7 +21,7 @@ import getpass
 import mock
 import cStringIO
 from twisted.trial import unittest
-from twisted.python import usage, runtime
+from twisted.python import usage, runtime, log
 from buildbot.scripts import base, runner
 from buildbot.test.util import misc
 
@@ -448,6 +448,31 @@ class TestTryOptions(OptionsMixin, unittest.TestCase):
         exp = self.defaults_and(properties=dict(a='b', c='d'))
         self.assertOptions(opts, exp)
 
+    def test_property(self):
+        opts = self.parse('--property=a=b')
+        exp = self.defaults_and(properties=dict(a='b'))
+        self.assertOptions(opts, exp)
+
+    def test_property_multiple_opts(self):
+        opts = self.parse('--property=X=1', '--property=Y=2')
+        exp = self.defaults_and(properties=dict(X='1', Y='2'))
+        self.assertOptions(opts, exp)
+
+    def test_property_equals(self):
+        opts = self.parse('--property=X=2+2=4')
+        exp = self.defaults_and(properties=dict(X='2+2=4'))
+        self.assertOptions(opts, exp)
+
+    def test_property_commas(self):
+        opts = self.parse('--property=a=b,c=d')
+        exp = self.defaults_and(properties=dict(a='b,c=d'))
+        self.assertOptions(opts, exp)
+
+    def test_property_and_properties(self):
+        opts = self.parse('--property=X=1', '--properties=Y=2')
+        exp = self.defaults_and(properties=dict(X='1', Y='2'))
+        self.assertOptions(opts, exp)
+
     def test_properties_builders_multiple(self):
         opts = self.parse('--builder=aa', '--builder=bb')
         exp = self.defaults_and(builders=['aa', 'bb'])
@@ -524,10 +549,18 @@ class TestTryOptions(OptionsMixin, unittest.TestCase):
                 buildbotbin='.virtualenvs/buildbot/bin/buildbot')
         self.assertOptions(opts, exp)
 
-    def test_pb_no_master(self):
+    def test_pb_withNoMaster(self):
+        """
+        When 'builbot try' is asked to connect via pb, but no master is
+        specified, a usage error is raised.
+        """
         self.assertRaises(usage.UsageError, self.parse, '--connect=pb')
 
-    def test_master_inval(self):
+    def test_pb_withInvalidMaster(self):
+        """
+        When 'buildbot try' is asked to conncect via pb, but an invalid
+        master is specified, a usage error is raised.
+        """
         self.assertRaises(usage.UsageError, self.parse,
                           '--connect=pb', '--master=foo')
 
@@ -888,6 +921,12 @@ class TestOptions(OptionsMixin, misc.StdoutAssertionsMixin, unittest.TestCase):
         except SystemExit, e:
             self.assertEqual(e.args[0], 0)
         self.assertInStdout('Buildbot version:')
+
+    def test_verbose(self):
+        self.patch(log, 'startLogging', mock.Mock())
+        self.assertRaises(usage.UsageError, self.parse, "--verbose")
+        log.startLogging.assert_called_once_with(sys.stderr)
+
 
 class TestRun(unittest.TestCase):
 

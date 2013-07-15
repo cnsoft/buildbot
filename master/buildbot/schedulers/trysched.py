@@ -60,33 +60,62 @@ class BadJobfile(Exception):
 
 
 class JobdirService(MaildirService):
-    # NOTE: tightly coupled with Try_Jobdir, below
+    # NOTE: tightly coupled with Try_Jobdir, below. We used to track it as a "parent"
+    # via the MultiService API, but now we just track it as the member "self.scheduler"
+
+    def __init__(self, scheduler, basedir=None):
+        self.scheduler = scheduler
+        MaildirService.__init__(self, basedir)
 
     def messageReceived(self, filename):
         f = self.moveToCurDir(filename)
-        return self.parent.handleJobFile(filename, f)
+        return self.scheduler.handleJobFile(filename, f)
 
 
 class Try_Jobdir(TryBase):
 
-    compare_attrs = TryBase.compare_attrs + ('jobdir',)
+    compare_attrs = ('jobdir',)
 
     def __init__(self, name, builderNames, jobdir,
                  properties={}):
         TryBase.__init__(self, name=name, builderNames=builderNames,
                          properties=properties)
         self.jobdir = jobdir
-        self.watcher = JobdirService()
-        self.watcher.setServiceParent(self)
+        self.watcher = JobdirService(scheduler=self)
 
-    def startService(self):
+    # TryBase used to be a MultiService and managed the JobdirService via a parent/child 
+    # relationship. We stub out the addService/removeService and just keep track of 
+    # JobdirService as self.watcher. We'll refactor these things later and remove
+    # the need for this.
+    def addService(self, child):
+        pass
+
+    def removeService(self, child):
+        pass
+
+    # activation handlers
+
+    @defer.inlineCallbacks
+    def activate(self):
+        yield TryBase.activate(self)
+
         # set the watcher's basedir now that we have a master
         jobdir = os.path.join(self.master.basedir, self.jobdir)
         self.watcher.setBasedir(jobdir)
         for subdir in "cur new tmp".split():
             if not os.path.exists(os.path.join(jobdir, subdir)):
                 os.mkdir(os.path.join(jobdir, subdir))
-        TryBase.startService(self)
+
+        # bridge the activate/deactivate to a startService/stopService on the
+        # child service
+        self.watcher.startService()
+
+    @defer.inlineCallbacks
+    def deactivate(self):
+        yield TryBase.deactivate(self)
+        # bridge the activate/deactivate to a startService/stopService on the
+        # child service
+        self.watcher.stopService()
 
     def parseJob(self, f):
         # jobfiles are serialized build requests. Each is a list of
@@ -252,7 +281,7 @@ class Try_Userpass_Perspective(pbutil.NewCredPerspective):
         from buildbot.status.client import makeRemote
         defer.returnValue(makeRemote(bss))
 
-    def perspective_getAvailableBuilderNames(self):
+    def perspective_getAvailableBuilderNames(self, properties={}):
         # Return a list of builder names that are configured
         # for the try service
         # This is mostly intended for integrating try services
@@ -270,8 +299,9 @@ class Try_Userpass(TryBase):
         self.port = port
         self.userpass = userpass
 
-    def startService(self):
-        TryBase.startService(self)
+    @defer.inlineCallbacks
+    def activate(self):
+        yield TryBase.activate(self)
 
         # register each user/passwd with the pbmanager
         def factory(mind, username):
@@ -282,11 +312,8 @@ class Try_Userpass(TryBase):
                 self.master.pbmanager.register(
                     self.port, user, passwd, factory))
 
-    def stopService(self):
-        d = defer.maybeDeferred(TryBase.stopService, self)
-
-        def unreg(_):
-            return defer.gatherResults(
-                [reg.unregister() for reg in self.registrations])
-        d.addCallback(unreg)
-        return d
+    @defer.inlineCallbacks
+    def deactivate(self):
+        yield TryBase.deactivate(self)
+        yield defer.gatherResults(
+            [reg.unregister() for reg in self.registrations])

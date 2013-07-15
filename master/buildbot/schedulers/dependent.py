@@ -20,7 +20,7 @@ from buildbot.schedulers import base
 
 class Dependent(base.BaseScheduler):
 
-    compare_attrs = base.BaseScheduler.compare_attrs + ('upstream_name',)
+    compare_attrs = ('upstream_name',)
 
     def __init__(self, name, upstream, builderNames, properties={}, **kwargs):
         base.BaseScheduler.__init__(self, name, builderNames, properties,
@@ -38,7 +38,10 @@ class Dependent(base.BaseScheduler):
         # complete.
         self._subscription_lock = defer.DeferredLock()
 
+    @defer.inlineCallbacks
     def activate(self):
+        yield base.BaseScheduler.deactivate(self)
+
         self._buildset_new_consumer = self.master.data.startConsuming(
                     self._buildset_new_cb,
                     {}, ('buildset',))
@@ -49,15 +52,18 @@ class Dependent(base.BaseScheduler):
                     ('buildset', None, 'complete'))
 
         # check for any buildsets completed before we started
-        return self._checkCompletedBuildsets(None, )
+        yield self._checkCompletedBuildsets(None, )
 
+    @defer.inlineCallbacks
     def deactivate(self):
+        # the base deactivate will unsubscribe from new changes
+        yield base.BaseScheduler.deactivate(self)
+
         if self._buildset_new_consumer:
             self._buildset_new_consumer.stopConsuming()
         if self._buildset_complete_consumer:
             self._buildset_complete_consumer.stopConsuming()
         self._cached_upstream_bsids = None
-        return defer.succeed(None)
 
     @util.deferredLocked('_subscription_lock')
     def _buildset_new_cb(self, key, msg):
@@ -113,7 +119,7 @@ class Dependent(base.BaseScheduler):
         changed = False
         rv = []
         for bsid in self._cached_upstream_bsids[:]:
-            buildset = yield self.master.data.get({}, ('buildset', str(bsid)))
+            buildset = yield self.master.data.get(('buildset', str(bsid)))
             if not buildset:
                 self._cached_upstream_bsids.remove(bsid)
                 changed = True

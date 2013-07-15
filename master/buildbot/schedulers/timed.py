@@ -40,8 +40,6 @@ class Timed(base.BaseScheduler):
     before the service stops.
     """
 
-    compare_attrs = base.BaseScheduler.compare_attrs
-
     def __init__(self, name, builderNames, properties={}, **kwargs):
         base.BaseScheduler.__init__(self, name, builderNames, properties, 
                                     **kwargs)
@@ -59,11 +57,14 @@ class Timed(base.BaseScheduler):
         self._reactor = reactor # patched by tests
 
     def activate(self):
+        d = base.BaseScheduler.activate(self)
+
         # no need to lock this; nothing else can run before the service is started
         self.actuateOk = True
 
         # get the scheduler's last_build time (note: only done at startup)
-        d = self.getState('last_build', None)
+        d.addCallback(lambda _ :
+            self.getState('last_build', None))
         def set_last(lastActuated):
             self.lastActuated = lastActuated
         d.addCallback(set_last)
@@ -79,7 +80,10 @@ class Timed(base.BaseScheduler):
         """Hook for subclasses to participate in the L{activate} process;
         can return a Deferred"""
 
+    @defer.inlineCallbacks
     def deactivate(self):
+        yield base.BaseScheduler.deactivate(self)
+
         # shut down any pending actuation, and ensure that we wait for any
         # current actuation to complete by acquiring the lock.  This ensures
         # that no build will be scheduled after deactivate is complete.
@@ -89,7 +93,7 @@ class Timed(base.BaseScheduler):
             if self.actuateAtTimer:
                 self.actuateAtTimer.cancel()
             self.actuateAtTimer = None
-        return self.actuationLock.run(stop_actuating)
+        yield self.actuationLock.run(stop_actuating)
 
     ## Scheduler methods
 
@@ -186,12 +190,13 @@ class Timed(base.BaseScheduler):
 
 
 class Periodic(Timed):
-    compare_attrs = Timed.compare_attrs + ('periodicBuildTimer', 'branch',)
+    compare_attrs = ('periodicBuildTimer', 'branch',)
 
     def __init__(self, name, builderNames, periodicBuildTimer,
             branch=None, properties={}, onlyImportant=False):
         Timed.__init__(self, name=name, builderNames=builderNames,
                     properties=properties)
+
         if periodicBuildTimer <= 0:
             config.error(
                 "periodicBuildTimer must be positive")
@@ -210,8 +215,7 @@ class Periodic(Timed):
         return self.addBuildsetForLatest(reason=self.reason, branch=self.branch)
 
 class NightlyBase(Timed):
-    compare_attrs = (Timed.compare_attrs
-            + ('minute', 'hour', 'dayOfMonth', 'month', 'dayOfWeek'))
+    compare_attrs = ('minute', 'hour', 'dayOfMonth', 'month', 'dayOfWeek')
 
     def __init__(self, name, builderNames, minute=0, hour='*',
                  dayOfMonth='*', month='*', dayOfWeek='*', **kwargs):
@@ -255,9 +259,8 @@ class NightlyBase(Timed):
         return defer.succeed(nextdate)
 
 class Nightly(NightlyBase):
-    compare_attrs = (NightlyBase.compare_attrs
-            + ('branch', 'onlyIfChanged', 'fileIsImportant',
-               'change_filter', 'onlyImportant',))
+    compare_attrs = ('branch', 'onlyIfChanged', 'fileIsImportant',
+               'change_filter', 'onlyImportant',)
 
     class NoBranch: pass
     def __init__(self, name, builderNames, minute=0, hour='*',

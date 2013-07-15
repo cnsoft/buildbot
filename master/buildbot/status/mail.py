@@ -482,8 +482,7 @@ class MailNotifier(base.StatusReceiverMultiService):
                     builds.append(build)
 
         if builds:
-            self.buildMessage("Buildset Complete: " + buildset['reason'], builds,
-                              buildset['results'])
+            self.buildMessage("(whole buildset)", builds, buildset['results'])
         
     def _gotBuildRequests(self, breqs, buildset):
         dl = []
@@ -751,7 +750,7 @@ class MailNotifier(base.StatusReceiverMultiService):
             if VALID_EMAIL.search(r):
                 to_recipients.add(r)
             else:
-                twlog.msg("INVALID EMAIL: %r" + r)
+                twlog.msg("INVALID EMAIL: %r" % r)
 
         # If we're sending to interested users put the extras in the
         # CC list so they can tell if they are also interested in the

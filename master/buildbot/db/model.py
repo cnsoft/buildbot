@@ -19,6 +19,7 @@ import migrate.versioning.schema
 import migrate.versioning.repository
 from twisted.python import util, log
 from buildbot.db import base
+from buildbot.db.types.json import JsonObject
 
 try:
     from migrate.versioning import exceptions
@@ -94,9 +95,9 @@ class Model(base.DBConnectorComponent):
         sa.Column('buildrequestid', sa.Integer, sa.ForeignKey('buildrequests.id'),
             nullable=False),
         # slave which performed this build
-        # TODO: ForeignKey to slaves table
+        # TODO: ForeignKey to buildslaves table, named buildslaveid
         # TODO: keep nullable to support slave-free builds
-        sa.Column('slaveid', sa.Integer),
+        sa.Column('buildslaveid', sa.Integer),
         # master which controlled this build
         sa.Column('masterid', sa.Integer, sa.ForeignKey('masters.id'),
             nullable=False),
@@ -155,7 +156,7 @@ class Model(base.DBConnectorComponent):
             nullable=False),
         sa.Column('property_name', sa.String(256), nullable=False),
         # JSON-encoded tuple of (value, source)
-        sa.Column('property_value', sa.String(1024), nullable=False),
+        sa.Column('property_value', sa.Text, nullable=False),
     )
 
     # This table represents Buildsets - sets of BuildRequests that share the
@@ -179,6 +180,58 @@ class Model(base.DBConnectorComponent):
         # results is only valid when complete == 1; 0 = SUCCESS, 1 = WARNINGS,
         # etc - see master/buildbot/status/builder.py
         sa.Column('results', sa.SmallInteger),
+    )
+
+    # changesources
+
+    # The changesources table gives a unique identifier to each ChangeSource.  It
+    # also links to other tables used to ensure only one master runs each
+    # changesource
+    changesources = sa.Table('changesources', metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+
+        # name for this changesource, as given in the configuration, plus a hash
+        # of that name used for a unique index
+        sa.Column('name', sa.Text, nullable=False),
+        sa.Column('name_hash', sa.String(40), nullable=False),
+    )
+
+    # This links changesources to the master where they are running.  A changesource
+    # linked to a master that is inactive can be unlinked by any master.  This
+    # is a separate table so that we can "claim" changesources on a master by
+    # inserting; this has better support in database servers for ensuring that
+    # exactly one claim succeeds.
+    changesource_masters = sa.Table('changesource_masters', metadata,
+        sa.Column('changesourceid', sa.Integer, sa.ForeignKey('changesources.id'),
+            nullable=False, primary_key=True),
+        sa.Column('masterid', sa.Integer, sa.ForeignKey('masters.id'),
+            nullable=False),
+    )
+
+    # buildslaves
+    buildslaves = sa.Table("buildslaves", metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("name", sa.String(50), nullable=False),
+        sa.Column("info", JsonObject, nullable=False),
+    )
+
+    # link buildslaves to all builder/master pairs for which they are
+    # configured
+    configured_buildslaves = sa.Table('configured_buildslaves', metadata,
+        sa.Column('id', sa.Integer, primary_key=True, nullable=False),
+        sa.Column('buildermasterid', sa.Integer,
+            sa.ForeignKey('builder_masters.id'), nullable=False),
+        sa.Column('buildslaveid', sa.Integer, sa.ForeignKey('buildslaves.id'),
+            nullable=False),
+    )
+
+    # link buildslaves to the masters they are currently connected to
+    connected_buildslaves = sa.Table('connected_buildslaves', metadata,
+        sa.Column('id', sa.Integer, primary_key=True, nullable=False),
+        sa.Column('masterid', sa.Integer,
+            sa.ForeignKey('masters.id'), nullable=False),
+        sa.Column('buildslaveid', sa.Integer, sa.ForeignKey('buildslaves.id'),
+            nullable=False),
     )
 
     # changes
@@ -219,7 +272,7 @@ class Model(base.DBConnectorComponent):
         sa.Column('author', sa.String(256), nullable=False),
 
         # commit comment
-        sa.Column('comments', sa.String(1024), nullable=False),
+        sa.Column('comments', sa.Text, nullable=False),
 
         # old, CVS-related boolean
         sa.Column('is_dir', sa.SmallInteger, nullable=False), # old, for CVS
@@ -477,6 +530,7 @@ class Model(base.DBConnectorComponent):
     sa.Index('buildsets_submitted_at', buildsets.c.submitted_at)
     sa.Index('buildset_properties_buildsetid',
             buildset_properties.c.buildsetid)
+    sa.Index('buildslaves_name', buildslaves.c.name, unique=True)
     sa.Index('changes_branch', changes.c.branch)
     sa.Index('changes_revision', changes.c.revision)
     sa.Index('changes_author', changes.c.author)
@@ -485,6 +539,7 @@ class Model(base.DBConnectorComponent):
     sa.Index('change_files_changeid', change_files.c.changeid)
     sa.Index('change_properties_changeid', change_properties.c.changeid)
     sa.Index('changes_sourcestampid', changes.c.sourcestampid)
+    sa.Index('changesource_name_hash', changesources.c.name_hash, unique=True)
     sa.Index('scheduler_name_hash', schedulers.c.name_hash, unique=True)
     sa.Index('scheduler_changes_schedulerid', scheduler_changes.c.schedulerid)
     sa.Index('scheduler_changes_changeid', scheduler_changes.c.changeid)
@@ -496,6 +551,18 @@ class Model(base.DBConnectorComponent):
     sa.Index('builder_masters_identity',
             builder_masters.c.builderid, builder_masters.c.masterid,
             unique=True)
+    sa.Index('configured_slaves_buildmasterid',
+            configured_buildslaves.c.buildermasterid)
+    sa.Index('configured_slaves_slaves', configured_buildslaves.c.buildslaveid)
+    sa.Index('configured_slaves_identity',
+            configured_buildslaves.c.buildermasterid,
+            configured_buildslaves.c.buildslaveid, unique=True)
+    sa.Index('connected_slaves_masterid',
+            connected_buildslaves.c.masterid)
+    sa.Index('connected_slaves_slaves', connected_buildslaves.c.buildslaveid)
+    sa.Index('connected_slaves_identity',
+            connected_buildslaves.c.masterid,
+            connected_buildslaves.c.buildslaveid, unique=True)
     sa.Index('users_identifier', users.c.identifier, unique=True)
     sa.Index('users_info_uid', users_info.c.uid)
     sa.Index('users_info_uid_attr_type', users_info.c.uid,
@@ -521,8 +588,8 @@ class Model(base.DBConnectorComponent):
     sa.Index('builds_number',
             builds.c.builderid, builds.c.number,
             unique=True)
-    sa.Index('builds_slaveid',
-            builds.c.slaveid)
+    sa.Index('builds_buildslaveid',
+            builds.c.buildslaveid)
     sa.Index('builds_masterid',
             builds.c.masterid)
     sa.Index('steps_number', steps.c.buildid, steps.c.number,
@@ -543,6 +610,8 @@ class Model(base.DBConnectorComponent):
         ('sourcestamps',
             dict(unique=False, column_names=['patchid'], name='patchid')),
         ('scheduler_masters',
+            dict(unique=False, column_names=['masterid'], name='masterid')),
+        ('changesource_masters',
             dict(unique=False, column_names=['masterid'], name='masterid')),
         ('buildset_sourcestamps',
             dict(unique=False, column_names=['sourcestampid'],

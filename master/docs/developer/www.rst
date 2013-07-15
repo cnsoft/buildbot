@@ -1,3 +1,5 @@
+.. _WWW:
+
 WWW
 ===
 
@@ -21,18 +23,19 @@ Design Overview
 The ``www`` service exposes three pieces via HTTP:
 
  * A REST interface wrapping :ref:`Data_API`;
- * A WebSocket (and other Comet-related protocoles) wrapping the :ref:`Messaging_and_Queues` interface; and
- * Static JavaScript and resources implementing the client-side UI.
+ * HTTP-based messaging protocols wrapping the :ref:`Messaging_and_Queues` interface; and
+ * Static resources implementing the client-side UI.
 
 The REST interface is a very thin wrapper: URLs are translated directly into Data API paths, and results are returned directly, in JSON format.
-Control calls are handled with JSONRPC.
+It is based on `JSON API <http://jsonapi.org/>`_.
+Control calls are handled with a simplified form of `JSONRPC 2.0 <http://www.jsonrpc.org/specification>`_.
 
 The message interface is also a thin wrapper around Buildbot's MQ mechanism.
 Clients can subscribe to messages, and receive copies of the messages, in JSON, as they are received by the buildmaster.
 
-The client-side UI is also a thin wrapper around a typical AngularJS application.
+The client-side UI is an AngularJS application.
 Buildbot uses the Python setuptools entry-point mechanism to allow multiple packages to be combined into a single client-side experience.
-This allows developers and users to build custom components for the web UI without hacking Buildbot itself.
+This allows frontend developers and users to build custom components for the web UI without hacking Buildbot itself.
 
 Python development and AngularJS development are very different processes, requiring different environment requirements and skillsets.
 To maimize hackability, Buildbot separates the two cleanly.
@@ -43,21 +46,16 @@ URLs
 ~~~~
 
 The Buildbot web interface is rooted at its base URL, as configured by the user.
-It is entirely possible for this base URL to contain path components, e.g., ``http://build.myorg.net/buildbot``, if hosted behind an HTTP proxy.
+It is entirely possible for this base URL to contain path components, e.g., ``http://build.myorg.net/buildbot/``, if hosted behind an HTTP proxy.
 To accomplish this, all URLs are generated relative to the base URL.
 
 Overall, the space under the base URL looks like this:
 
-* ``/`` -- the HTML document that loads the UI
-* ``/api/v$V`` -- the root of the REST APIs, each versioned numerically.
+* ``/`` -- The HTML document that loads the UI
+* ``/api/v{version}`` -- The root of the REST APIs, each versioned numerically.
   Users should, in general, use the latest version.
-* ``/ws`` -- the websocket endpoint to subscribe to messages from the mq system.
-  websocket is full-fledge protocol for arbitrary messaging to and from browser. Being an http extension, the protocol is not yet well
-  supported by all http proxy technologies, and thus not well suited for enterprise.
-  Only one connection needed per browser
-* ``/sse`` -- the server-sent-event endpoint to subscribe to messages from the mq system.
-  sse is a simpler protocol, that is more REST compliant, only using chunk-encoding http feature
-  to stream the events. Potencially one connection to server per event type.
+* ``/ws`` -- The WebSocket endpoint to subscribe to messages from the mq system.
+* ``/sse`` -- The `server sent event <http://en.wikipedia.org/wiki/Server-sent_events>`_ endpoint where clients can subscribe to messages from the mq system.
 
 REST API
 --------
@@ -65,41 +63,149 @@ REST API
 The REST API is a thin wrapper around the data API's "Getter" and "Control" sections.
 It is also designed, in keeping with REST principles, to be discoverable.
 As such, the details of the paths and resources are not documented here.
-See the :ref:`Data_API` documentation instead.
+Begin at the root URL, and see the :ref:`Data_API` documentation for more information.
 
 Getting
 ~~~~~~~
 
 To get data, issue a GET request to the appropriate path.
-For example, with a base URL of ``http://build.myorg.net/buildbot``, the list of masters for builder 9 is available at ``http://build.myorg.net/buildbot/api/v2/builder/9/master/``.
+For example, with a base URL of ``http://build.myorg.net/buildbot``, the list of masters for builder 9 is available at ``http://build.myorg.net/buildbot/api/v2/builder/9/master``.
 
-The following query arguments can be added to the request to alter the format of the response:
+Results are formatted in keeping with the `JSON API <http://jsonapi.org/>`_ specification.
+The top level of every response is an object.
+Its keys are the plural names of the resource types, and the values are lists of objects, even for a single-resource request.
+For example::
 
- * ``as_text`` -- (boolean) return content-type ``text/plain``, for ease of use in a browser
- * ``filter`` -- (boolean) filter out empty or false-ish values
- * ``compact`` -- (boolean) return compact JSON, rather than pretty-printed
- * ``callback`` -- if given, return a JSONP-encoded response with this callback
+    {
+      "meta": {
+        "links": [
+          {
+            "href": "http://build.my.org/api/v2/scheduler",
+            "rel": "self"
+          }
+        ],
+        "total": 2
+      },
+      "schedulers": [
+        {
+          "link": "http://build.my.org/api/v2/scheduler/1",
+          "master": null,
+          "name": "smoketest",
+          "schedulerid": 1
+        },
+        {
+          "link": "http://build.my.org/api/v2/scheduler/4",
+          "master": {
+            "active": true,
+            "last_active": 1369604067,
+            "link": "http://build.my.org/api/v2/master/1",
+            "masterid": 1,
+            "name": "master3:/BB/master"
+          },
+          "name": "goaheadtryme",
+          "schedulerid": 2
+        }
+      ]
+    }
+
+A response may optionally contain extra, related resources beyond those requested.
+The ``meta`` key contains metadata about the response, including navigation links and the total count of resources in a collection.
+
+Several query parameters may be used to affect the results of a request.
+These parameters are applied in the order described (so, it is not possible to sort on a field that is not selected, for example).
+
+Field Selection
+...............
+
+If only certain fields of each resource are required, the ``field`` query parameter can be used to select them.
+For example, the following will select just the names and id's of all schedulers:
+
+ * ``http://build.my.org/api/v2/scheduler?field=name&field=schedulerid``
+
+Field selection can be used for either detail (single-entity) or collection (multi-entity) requests.
+The remaining options only apply to collection requests.
+
+Filtering
+.........
+
+Collection responses may be filtered on any simple top-level field.
+
+To select records with a specific value use the query parameter ``{field}={value}``.
+For example, ``http://build.my.org/api/v2/scheduler?name=smoketest`` selects the scheduler named "smoketest".
+
+Filters can use any of the operators listed below, with query parameters of the form ``{field}__{operator}={value}``.
+
+ * ``eq`` - equality, or with the same parameter appearing multiple times, set membership
+ * ``ne`` - inequality, or set exclusion
+ * ``lt`` - select resources where the field's value is less than ``{value}``
+ * ``le`` - select resources where the field's value is less than or equal to ``{value}``
+ * ``gt`` - select resources where the field's value is greater than ``{value}``
+ * ``ge`` - select resources where the field's value is greater than or equal to ``{value}``
+
+For example:
+
+ * ``http://build.my.org/api/v2/builder?name__lt=cccc``
+ * ``http://build.my.org/api/v2/buildsets?complete__eq=false``
+
+Boolean values can be given as ``on``/``off``, ``true``/``false``, ``yes``/``no``, or ``1``/``0``.
+
+Sorting
+.......
+
+Collection responses may be ordered with the ``order`` query parameter.
+This parameter takes a field name to sort on, optionally prefixed with ``-`` to reverse the sort.
+The parameter can appear multiple times, and will be sorted lexically with the fields arranged in the given order.
+For example:
+
+ * ``http://build.my.org/api/v2/buildrequest?order=builderid&order=buildrequestid``
+
+Pagination
+..........
+
+Collection responses may be paginated with the ``offset`` and ``limit`` query parameters.
+The offset is the 0-based index of the first result to included, after filtering and sorting.
+The limit is the maximum number of results to return.
+Some resource types may impose a maximum on the limit parameter; be sure to check the resulting links to determine whether further data is available.
+For example:
+
+ * ``http://build.my.org/api/v2/buildrequest?order=builderid&limit=10``
+ * ``http://build.my.org/api/v2/buildrequest?order=builderid&offset=20&limit=10``
 
 Controlling
 ~~~~~~~~~~~
 
-Data API control operations are handled by POST requests.
-The request body content type can be either ``application/x-www-form-urlencoded`` or, better, ``application/json``.
+Data API control operations are handled by POST requests using a simplified form of `JSONRPC 2.0 <http://www.jsonrpc.org/specification>`_.
+The JSONRPC "method" is mapped to the data API "action", and the parameters are passed to that application.
 
-If encoded in ``application/x-www-form-urlencoded`` options are retrived in the form request args, and transmitted to
-the control data api, special ``action`` parameter is removed, and transmitted to control data api, in its ``action``
-argument. Response is transmitted json encoded in the same format as GET
+The following parts of the protocol are not supported:
 
-If encoded in ``application/json``, JSON-RPC2 encodding is used: ``http://www.jsonrpc.org/specification``, where
-jsonrpc's ``method`` is mapped to ``action``, and jsonrpc's ``params`` is mapped to options.
-This allows to leverage existing client implementation of jsonrpc: ``http://en.wikipedia.org/wiki/JSON-RPC#Implementations``
+ * positional parameters
+ * batch requests
 
+Requests are sent as an HTTP POST, containing the request JSON in the body.
+The content-type header is ignored; for compatibility with simple CORS requests (avoiding preflight checks), use ``text/plain``.
+
+A simple example:
+
+.. code-block:: none
+
+    POST http://build.my.org/api/v2/scheduler/4
+    --> {"jsonrpc": "2.0", "method": "force", "params": {"revision": "abcd", "branch": "dev"}, "id": 843}
+    <-- {"jsonrpc": "2.0", "result": {"buildsetid": 44}, "id": 843}
 
 Message API
 -----------
 
-Currently messages are implemented with an experimental WebSockets implementation at ``ws://$baseurl/ws``.
+Currently messages are implemented with two protocols: WebSockets and `server sent event <http://en.wikipedia.org/wiki/Server-sent_events>`_.
 This will likely change or be supplemented with other mechanisms before release.
+
+WebSocket is a protocol for arbitrary messaging to and from browser.
+As an HTTP extension, the protocol is not yet well supported by all HTTP proxy technologies, and thus not well suited for enterprise.
+Only one WebSocket connection is needed per browser.
+
+SSE is a simpler protocol than WebSockets and is more REST compliant.
+It uses the chunk-encoding HTTP feature to stream the events.
+It may use one connection to server per event type.
 
 JavaScript Application
 ----------------------
@@ -142,10 +248,7 @@ modules we may or may not want to include:
 Extensibility
 ~~~~~~~~~~~~~
 
-The Buildbot UI should be designed to support plug-ins to the web UI, allowing users and developers to create customized views without modifying Buildbot code.
-
-How we can do that with angular is TBD
-
+TODO: document writing plugins
 
 .. _Routing:
 
@@ -188,8 +291,6 @@ Start by cloning the project and its git submodules:
 .. code-block:: none
 
     git clone git://github.com/buildbot/buildbot.git
-    cd buildbot/www
-    npm install
 
 In the root of the source tree, create and activate a virtualenv to install everything in:
 
@@ -209,6 +310,8 @@ Next, install the Buildbot-WWW and Buildbot packages using ``--editable``, which
     pip install --editable master/
 
 This will fetch a number of dependencies from pypi, the Python package repository.
+This will also fetch a bunch a bunch of node.js dependencies used for building the web application,
+and a bunch of client side js dependencies, with bower
 
 Now you'll need to create a master instance.
 For a bit more detail, see the Buildbot tutorial (:ref:`first-run-label`).
@@ -220,10 +323,10 @@ For a bit more detail, see the Buildbot tutorial (:ref:`first-run-label`).
     buildbot start sandbox/testmaster
 
 If all goes well, the master will start up and begin running in the background.
-Since you haven't yet done a full grunt build, the application will run from ``www/src``.
-If, when the master starts, ``www/built`` exists, then it will run from that directory instead.
+As you just installed www in editable mode (aka 'develop' mode), setup.py did build
+the web site in prod mode, so the everything is minified, making it hard to debug.
 
-When doing web development, you can run:
+When doing web development, you usually run:
 
 .. code-block:: none
 
@@ -232,44 +335,59 @@ When doing web development, you can run:
     grunt dev
 
 This will compile the webapp in development mode, and automatically rebuild when files change.
-If your browser and dev environment are on the same machine, this will even reload the browser!
+
+If your browser and dev environment are on the same machine, you can use the livereload feature of the build script.
+For this to work, you need to run those command from another terminal, at the same time as "grunt dev"
+
+.. code-block:: none
+
+    cd www
+    . tosource
+    grunt reloadserver
 
 
 Testing Setup
 -------------
 
-TBD with testacular
+buildbot_www uses `Karma <http://karma-runner.github.io>`_ to run the coffeescript test suite. This is the official test framework made for angular.js
+We dont run the front-end testsuite inside the python 'trial' test suite, because testing python and JS is technically very different.
+
+Karma needs a browser to run the unit test in. It supports all the major browsers. buildbot www's build script supports two popular browsers,
+and PhantomJS which is headless web browser made for unit testing.
+Like for the livereload feature, the test-runner works with autowatch mode. You need to use "grunt dev" in parallel from the following commands:
 
 
-Ghost.py
-~~~~~~~~
+Run the tests in Firefox:
 
-Ghost.py is a testing library offering fullfeatured browser control.
-It actually uses python binding to webkit browser engine.
-Buildbot www test framework is instanciating the www server with stubbed data api, and testing how the JS code is behaving inside the headless browser.
-More info on ghost is on the `original web server <http://jeanphix.me/Ghost.py/>`_
+.. code-block:: none
 
-As buildbot is running inside twisted, and our tests are running with the help of trial, we need to have a special version of ghost, we called txghost, for twisted ghost.
+    cd www
+    . tosource
+    grunt fftest
 
-This version has the same API as the original documented ghost, but every call is returning deferred.
+Run the tests in Chrome:
 
-Note, that as ghost is using webkit, which is based on qt technology, we must use some tricks in order to run the qt main loop inside trial reactor
+.. code-block:: none
 
-Also, ghost has no support for websocket, so message passing tests are disabled when websocket is unavailable.
+    cd www
+    . tosource
+    grunt chrometest
 
-The ghost tests is running the same tests as ``buildbot ui-test-server`` would do on a real browser, but allows them to be run automatically in metabuildbot.
-It is not recomended to run the tests via ghost method for development. Running them inside a real browser is much more productive, because you can use
-the powerfull debug tools provided by them.
+Run the tests in PhantomJS (which you can download at http://phantomjs.org/):
 
-Developer setup
-~~~~~~~~~~~~~~~
+.. code-block:: none
 
-Unfortunately, PyQt is difficult to install in a virtualenv.
-If you use ``--no-site-packages`` to set up a virtualenv, it will not inherit a globally installed PyQt.
-So you need to convert your virtual env to use site packages.
+    cd www
+    . tosource
+    grunt pjstest
 
-.. code-block:: bash
+For the purpose of the metabuildbot, a special grunt target is made for running the test suite inside PhantomJS.
+This special target only runs once, so is not connected to the watch mechanics:
 
-     virtualenv path/to/your/sandbox
+.. code-block:: none
 
-You can then install either PyQt or PySide systemwide, and use it within the virtualenv.
+    cd www
+    . tosource
+    grunt ci
+
+

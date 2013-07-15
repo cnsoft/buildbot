@@ -244,7 +244,7 @@ builds
     * ``number`` (the build number, unique only within the builder)
     * ``builderid`` (the ID of the builder that performed this build)
     * ``buildrequestid`` (the ID of the build request that caused this build)
-    * ``slaveid`` (the ID of the slave on which this build was performed)
+    * ``buildslaveid`` (the ID of the slave on which this build was performed)
     * ``masterid`` (the ID of the master on which this build was performed)
     * ``started_at`` (datetime at which this build began)
     * ``complete_at`` (datetime at which this build finished, or None if it is ongoing)
@@ -277,7 +277,7 @@ builds
         Get a list of builds, in the format described above.
         Each of the parameters limit the resulting set of builds.
 
-    .. py:method:: addBuild(builderid, buildrequestid, slaveid, masterid, state_strings)
+    .. py:method:: addBuild(builderid, buildrequestid, buildslaveid, masterid, state_strings)
 
         :param integer builderid: builder to get builds for
         :param integer buildrequestid: build request id
@@ -620,6 +620,79 @@ buildsets
         Note that this method does not distinguish a nonexistent buildset from
         a buildset with no properties, and returns ``{}`` in either case.
 
+buildslaves
+~~~~~~~~~~~
+
+.. py:module:: buildbot.db.buildslaves
+
+.. index:: double: BuildSlaves; DB Connector Component
+
+.. py:class:: BuildslavesConnectorComponent
+
+    This class handles Buildbot's notion of buildslaves.
+    The buildslave information is returned as a dictionary:
+
+    * ``id``
+    * ``name`` - the name of the buildslave
+    * ``slaveinfo`` - buildslave information as dictionary
+    * ``connected_to`` - a list of masters, by ID, to which this buildslave is currently connected.
+      This list will typically contain only one master, but in unusual circumstances the same bulidslave may appear to be connected to multiple masters simultaneously.
+    * ``configured_on`` - a list of master-builder pairs, on which this buildslave is configured.
+      Each pair is represented by a dictionary with keys ``buliderid`` and ``masterid``.
+
+    The buildslave information can be any JSON-able object.
+    See :bb:rtype:`buildslave` for more detail.
+
+    .. py:method:: findBuildslaveId(name=name)
+
+        :param name: buildslave name
+        :type name: 50-character identifier
+        :returns: builslave ID via Deferred
+
+        Get the ID for a buildslave, adding a new buildslave to the database if necessary.
+        The slave information for a new buildslave is initialized to an empty dictionary.
+
+    .. py:method:: getBuildslaves(masterid=None, builderid=None)
+
+        :param integer masterid: limit to slaves configured on this master
+        :param integer builderid: limit to slaves configured on this builder
+        :returns: list of buildslave dictionaries, via Deferred
+
+        Get a list of buildslaves.
+        If either or both of the filtering parameters either specified, then the result is limited to buildslaves configured to run on that master or builder.
+        The ``configured_on`` results are limited by the filtering parameters as well.
+        The ``connected_to`` results are limited by the ``masterid`` parameter.
+
+    .. py:method:: getBuildslave(slaveid=None, name=None, masterid=None, builderid=None)
+
+        :param string name: the name of the buildslave to retrieve
+        :param integer buildslaveid: the ID of the buildslave to retrieve
+        :param integer masterid: limit to slaves configured on this master
+        :param integer builderid: limit to slaves configured on this builder
+        :returns: info dictionary or None, via Deferred
+
+        Looks up the buildslave with the given name or ID, returning ``None`` if no matching buildslave is found.
+        The ``masterid`` and ``builderid`` arguments function as they do for :py:meth:`getBuildslaves`.
+
+    .. py:method:: buildslaveConnected(buildslaveid, masterid, slaveinfo)
+
+        :param integer buildslaveid: the ID of the buildslave
+        :param integer masterid: the ID of the master to which it connected
+        :param slaveinfo: the new buildslave information dictionary
+        :type slaveinfo: dict
+        :returns: Deferred
+
+        Record the given buildslave as attached to the given master, and update its cached slave information.
+        The supplied information completely replaces any existing information.
+
+    .. py:method:: buildslaveDisconnected(buildslaveid, masterid)
+
+        :param integer buildslaveid: the ID of the buildslave
+        :param integer masterid: the ID of the master to which it connected
+        :returns: Deferred
+
+        Record the given buildslave as no longer attached to the given master.
+
 changes
 ~~~~~~~
 
@@ -735,17 +808,15 @@ changes
             earlier than the time at which it is merged into a repository
             monitored by Buildbot.
 
-    .. py:method:: getChanges(opts={})
+    .. py:method:: getChanges()
 
-        :param opts: data query options
         :returns: list of dictionaries via Deferred
 
         Get a list of the changes, represented as
         dictionaries; changes are sorted, and paged using generic data query options
 
-    .. py:method:: getChangesCount(opts={})
+    .. py:method:: getChangesCount()
 
-        :param opts: data query options
         :returns: list of dictionaries via Deferred
 
         Get the number changes, that the query option would return if no
@@ -758,6 +829,75 @@ changes
 
         Get the most-recently-assigned changeid, or ``None`` if there are no
         changes at all.
+
+
+changesources
+~~~~~~~~~~~~~
+
+.. py:module:: buildbot.db.changesources
+
+.. index:: double: ChangeSources; DB Connector Component
+
+.. py:exception:: ChangeSourceAlreadyClaimedError
+
+    Raised when a changesource request is already claimed by another master.
+
+.. py:class:: ChangeSourcesConnectorComponent
+
+    This class manages the state of the Buildbot changesources.
+
+    An instance of this class is available at ``master.db.changesources``.
+
+    Changesources are identified by their changesourceid, which can be objtained from :py:meth:`findChangeSourceId`.
+
+    Changesources are represented by dictionaries with the following keys:
+
+        * ``id`` - changesource's ID
+        * ``name`` - changesource's name
+        * ``masterid`` - ID of the master currently running this changesource, or None if it is inactive
+
+    Note that this class is conservative in determining what changesources are inactive: a changesource linked to an inactive master is still considered active.
+    This situation should never occur, however; links to a master should be deleted when it is marked inactive.
+
+    .. py:method:: findChangeSourceId(name)
+
+        :param name: changesource name
+        :returns: changesource ID via Deferred
+
+        Return the changesource ID for the changesource with this name.
+        If such a changesource is already in the database, this returns the ID.
+        If not, the changesource is added to the database and its ID returned.
+
+    .. py:method:: setChangeSourceMaster(changesourceid, masterid)
+
+        :param changesourceid: changesource to set the master for
+        :param masterid: new master for this changesource, or None
+        :returns: Deferred
+
+        Set, or unset if ``masterid`` is None, the active master for this changesource.
+        If no master is currently set, or the current master is not active, this method will complete without error.
+        If the current master is active, this method will raise :py:exc:`~buildbot.db.exceptions.ChangeSourceAlreadyClaimedError`.
+
+    .. py:method:: getChangeSource(changesourceid)
+
+        :param changesourceid: changesource ID
+        :returns: changesource dictionary or None, via Deferred
+
+        Get the changesource dictionary for the given changesource.
+
+    .. py:method:: getChangeSources(active=None, masterid=None)
+
+        :param boolean active: if specified, filter for active or inactive changesources
+        :param integer masterid: if specified, only return changesources attached associated with this master
+        :returns: list of changesource dictionaries in unspecified order
+
+        Get a list of changesources.
+
+        If ``active`` is given, changesources are filtered according to whether they are active (true) or inactive (false).
+        An active changesource is one that is claimed by an active master.
+
+        If ``masterid`` is given, the list is restricted to schedulers associated with that master.
+
 
 schedulers
 ~~~~~~~~~~
@@ -775,7 +915,7 @@ schedulers
     This class manages the state of the Buildbot schedulers.  This state includes
     classifications of as-yet un-built changes.
 
-    An instance of this class is available at ``master.db.changes``.
+    An instance of this class is available at ``master.db.schedulers``.
 
     Schedulers are identified by their schedulerid, which can be objtained from :py:meth:`findSchedulerId`.
 
@@ -896,6 +1036,7 @@ sourcestamps
     * ``branch`` (branch, or ``None`` for default branch)
     * ``revision`` (revision, or ``None`` to indicate the latest revision, in
       which case this is a relative source stamp)
+    * ``patchid`` (ID of the patch)
     * ``patch_body`` (body of the patch, or ``None``)
     * ``patch_level`` (directory stripping level of the patch, or ``None``)
     * ``patch_subdir`` (subdirectory in which to apply the patch, or ``None``)
@@ -1186,7 +1327,7 @@ masters
 
         Get the indicated master.
 
-    .. py:method:: getMasters(opts={})
+    .. py:method:: getMasters()
 
         :returns: list of Master dicts via Deferred
 
@@ -1471,6 +1612,14 @@ You will also want to add an in-memory implementation of the methods to the
 fake classes in ``master/buildbot/test/fake/fakedb.py``.  Non-DB Buildbot code
 is tested using these fake implementations in order to isolate that code from
 the database code.
+
+The keys and types used in the return value from a connector's ``get`` methods are described in :bb:src:`master/buildbot/test/util/validation.py`, via the ``dbdict`` module-level value.
+This is a dictionary of ``DictValidator`` objects, one for each return value.
+
+These values are used within test methods like this::
+
+    rv = yield self.db.masters.getMaster(7)
+    validation.verifyDbDict(self, 'masterdict', rv)
 
 .. _Modifying-the-Database-Schema:
 

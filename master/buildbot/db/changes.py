@@ -48,7 +48,6 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
         ch_tbl = self.db.model.changes
 
         self.checkLength(ch_tbl.c.author, author)
-        self.checkLength(ch_tbl.c.comments, comments)
         self.checkLength(ch_tbl.c.branch, branch)
         self.checkLength(ch_tbl.c.revision, revision)
         self.checkLength(ch_tbl.c.revlink, revlink)
@@ -63,7 +62,7 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
 
         def thd(conn):
             # note that in a read-uncommitted database like SQLite this
-            # transaction does not buy atomicitiy - other database users may
+            # transaction does not buy atomicity - other database users may
             # still come across a change without its files, properties,
             # etc.  That's OK, since we don't announce the change until it's
             # all in the database, but beware.
@@ -164,12 +163,11 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
         d.addCallback(get_changes)
         return d
 
-    def getChanges(self, opts={}):
+    def getChanges(self):
         def thd(conn):
             # get the changeids from the 'changes' table
             changes_tbl = self.db.model.changes
-            q = sa.select([changes_tbl.c.changeid],
-                          **self.dataOptionsToSelectOptions(opts))
+            q = sa.select([changes_tbl.c.changeid])
             rp = conn.execute(q)
             changeids = [ row.changeid for row in rp ]
             rp.close()
@@ -183,10 +181,10 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
         d.addCallback(get_changes)
         return d
 
-    def getChangesCount(self, opts):
+    def getChangesCount(self):
         def thd(conn):
             changes_tbl = self.db.model.changes
-            q = sa.select([changes_tbl.c.changeid]).count()
+            q = sa.select([sa.func.count()]).select_from(changes_tbl)
             rp = conn.execute(q)
             r = 0
             for row in rp:
